@@ -1,0 +1,1798 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sổ Theo Dõi Đồng Hồ Nước Ở Cơ Sở 1</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0f172a;
+    --teal:#0e7490;
+    --teal-deep:#0c4a6e;
+  }
+  html,body{font-family:'Inter',system-ui,sans-serif;background:#f1f5f4;}
+  .font-mono-num{font-family:'DM Mono',ui-monospace,monospace;}
+  ::-webkit-scrollbar{height:8px;width:8px;}
+  ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px;}
+  ::-webkit-scrollbar-thumb:hover{background:#94a3b8;}
+
+  .tab-btn{position:relative;transition:color .15s ease;}
+  .tab-btn.active{color:var(--teal-deep);}
+  .tab-btn.active::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--teal-deep);border-radius:2px;}
+  .tab-panel{display:none;}
+  .tab-panel.active{display:block;animation:fadein .25s ease;}
+  @keyframes fadein{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
+
+  .gauge-ring{transform-origin:50% 50%;animation:spin 6s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .row-green{background:#ecfdf5 !important;}
+  .row-green:hover{background:#d1fae5 !important;}
+  .row-amber{background:#fffbeb !important;}
+  .row-amber:hover{background:#fef3c7 !important;}
+  .row-red{background:#fef2f2 !important;}
+  .row-red:hover{background:#fee2e2 !important;}
+
+  .badge-dot{width:8px;height:8px;border-radius:9999px;display:inline-block;}
+
+  input[type="date"]::-webkit-calendar-picker-indicator{cursor:pointer;}
+
+  .modal-overlay{background:rgba(15,23,42,.55);backdrop-filter:blur(2px);}
+
+  .toast{animation:toastin .25s ease, toastout .25s ease 2.6s forwards;}
+  @keyframes toastin{from{opacity:0;transform:translateY(-8px);}to{opacity:1;transform:translateY(0);}}
+  @keyframes toastout{to{opacity:0;transform:translateY(-8px);}}
+</style>
+<!-- Firebase SDK (compat) -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+</head>
+<body class="text-slate-800">
+
+<!-- ===================== MÀN HÌNH ĐĂNG NHẬP ===================== -->
+<div id="authOverlay" class="fixed inset-0 z-[100] flex items-center justify-center bg-gradient-to-br from-[#0c4a6e] via-[#0e7490] to-[#0f766e] p-4">
+  <div class="bg-white w-full max-w-sm rounded-2xl shadow-xl p-6 sm:p-7">
+    <div class="flex items-center gap-2 mb-1">
+      <svg class="w-8 h-8 shrink-0" viewBox="0 0 40 40" fill="none">
+        <circle cx="20" cy="20" r="17" stroke="#0e7490" stroke-width="2.5" stroke-dasharray="4 3"/>
+        <circle cx="20" cy="20" r="10" fill="#0e7490" fill-opacity=".15"/>
+        <path d="M20 20 L20 11" stroke="#0e7490" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="20" cy="20" r="2" fill="#0e7490"/>
+      </svg>
+      <h1 class="font-extrabold text-slate-800 text-lg leading-tight">Sổ Theo Dõi<br>Đồng Hồ Nước</h1>
+    </div>
+    <p class="text-xs text-slate-400 mb-5">Vui lòng đăng nhập bằng tài khoản được cấp để tiếp tục.</p>
+
+    <form id="loginForm" class="space-y-3">
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 mb-1">Email</label>
+        <input id="loginEmail" type="email" required autocomplete="username" placeholder="ten@congty.com" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 mb-1">Mật khẩu</label>
+        <input id="loginPassword" type="password" required autocomplete="current-password" placeholder="••••••••" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none">
+      </div>
+      <p id="loginError" class="hidden text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2"></p>
+      <button type="submit" id="loginSubmitBtn" class="w-full bg-teal-700 hover:bg-teal-800 text-white font-semibold px-4 py-2.5 rounded-lg text-sm shadow-sm transition">Đăng nhập</button>
+      <p class="text-[11px] text-slate-400 text-center">Chưa có tài khoản? Liên hệ quản trị viên để được cấp email/mật khẩu trong Firebase Console.</p>
+    </form>
+  </div>
+</div>
+
+<!-- ===================== ỨNG DỤNG (chỉ hiện sau khi đăng nhập) ===================== -->
+<div id="appRoot" class="hidden">
+
+<!-- ===================== HEADER ===================== -->
+<header class="sticky top-0 z-30 bg-gradient-to-r from-[#0c4a6e] via-[#0e7490] to-[#0f766e] text-white shadow-md">
+  <div class="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
+    <svg class="gauge-ring w-9 h-9 shrink-0" viewBox="0 0 40 40" fill="none">
+      <circle cx="20" cy="20" r="17" stroke="#e0f2fe" stroke-width="2.5" stroke-dasharray="4 3"/>
+      <circle cx="20" cy="20" r="10" fill="#e0f2fe" fill-opacity=".15"/>
+      <path d="M20 20 L20 11" stroke="#e0f2fe" stroke-width="2.5" stroke-linecap="round"/>
+      <circle cx="20" cy="20" r="2" fill="#e0f2fe"/>
+    </svg>
+    <div class="min-w-0">
+      <h1 class="text-base sm:text-lg font-extrabold tracking-tight truncate">SỔ THEO DÕI ĐỒNG HỒ NƯỚC Ở CƠ SỞ 1</h1>
+      <p class="text-[11px] sm:text-xs text-teal-100/80 -mt-0.5">Hồ Tràm · Xuân Sơn · Châu Pha · Đất Đỏ</p>
+    </div>
+    <div class="ml-auto flex items-center gap-3 shrink-0">
+      <div class="text-right hidden xs:block">
+        <p class="text-[11px] text-teal-100/70">Hôm nay</p>
+        <p id="todayLabel" class="text-xs sm:text-sm font-semibold font-mono-num"></p>
+      </div>
+      <div class="text-right border-l border-white/20 pl-3">
+        <p id="syncBadge" class="text-[11px] font-semibold whitespace-nowrap">⏳ Đang kết nối…</p>
+        <p id="userEmailLabel" class="text-[11px] text-teal-100/70 truncate max-w-[120px]"></p>
+      </div>
+      <button id="logoutBtn" title="Đăng xuất" class="text-teal-100/80 hover:text-white text-lg leading-none">⏻</button>
+    </div>
+  </div>
+  <nav class="max-w-6xl mx-auto px-2 flex gap-1 overflow-x-auto text-sm font-semibold border-t border-white/10">
+    <button data-tab="entry" class="tab-btn active text-white/90 px-3 py-2.5 whitespace-nowrap">📝 Nhập chỉ số</button>
+    <button data-tab="meters" class="tab-btn text-white/90 px-3 py-2.5 whitespace-nowrap">🚰 Danh sách đồng hồ</button>
+    <button data-tab="history" class="tab-btn text-white/90 px-3 py-2.5 whitespace-nowrap">📊 Lịch sử &amp; Lọc</button>
+    <button data-tab="analysis" class="tab-btn text-white/90 px-3 py-2.5 whitespace-nowrap">📈 Phân tích &amp; So sánh</button>
+    <button data-tab="backup" class="tab-btn text-white/90 px-3 py-2.5 whitespace-nowrap">💾 Sao lưu dữ liệu</button>
+  </nav>
+</header>
+
+<main class="max-w-6xl mx-auto px-3 sm:px-4 py-5 pb-16">
+
+  <!-- ===================== TAB: NHẬP CHỈ SỐ ===================== -->
+  <section id="panel-entry" class="tab-panel active space-y-4">
+
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
+      <h2 class="font-bold text-slate-800 mb-4 flex items-center gap-2">
+        <span class="w-1.5 h-5 bg-teal-600 rounded-full"></span> Nhập chỉ số đồng hồ hôm nay
+      </h2>
+
+      <form id="entryForm" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 mb-1">Chi nhánh</label>
+          <select id="entryBranch" required class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none bg-white">
+            <option value="">— Chọn chi nhánh —</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 mb-1">Nhà máy nước</label>
+          <select id="entryPlant" required disabled class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none bg-white disabled:bg-slate-100 disabled:text-slate-400">
+            <option value="">— Chọn chi nhánh trước —</option>
+          </select>
+        </div>
+        <div class="sm:col-span-2">
+          <label class="block text-xs font-semibold text-slate-500 mb-1">Đồng hồ (ID · Cấp cho · Vị trí)</label>
+          <select id="entryMeter" required disabled class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none bg-white disabled:bg-slate-100 disabled:text-slate-400">
+            <option value="">— Chọn nhà máy trước —</option>
+          </select>
+        </div>
+
+        <!-- Reference card -->
+        <div id="refCard" class="hidden sm:col-span-2 bg-slate-50 border border-dashed border-slate-300 rounded-xl p-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+          <div>
+            <p class="text-[11px] text-slate-400">Chỉ số cũ (kỳ trước)</p>
+            <p id="refOldIndex" class="font-mono-num font-bold text-slate-700">—</p>
+          </div>
+          <div>
+            <p class="text-[11px] text-slate-400">Ngày kỳ trước</p>
+            <p id="refOldDate" class="font-mono-num font-semibold text-slate-600">—</p>
+          </div>
+          <div>
+            <p class="text-[11px] text-slate-400">Khối lượng kỳ trước</p>
+            <p id="refOldVolume" class="font-mono-num font-bold text-slate-700">—</p>
+          </div>
+          <div>
+            <p class="text-[11px] text-slate-400">Trạng thái đồng hồ</p>
+            <p id="refStatus" class="font-semibold">—</p>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 mb-1">Ngày cập nhật</label>
+          <input id="entryDate" type="date" required class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 mb-1">Chỉ số đồng hồ (m³)</label>
+          <input id="entryIndex" type="number" step="0.01" required placeholder="VD: 15234.5" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm font-mono-num focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 mb-1">Khối lượng tiêu thụ (m³)</label>
+          <input id="entryVolume" type="number" step="0.01" required placeholder="Tự gợi ý, có thể sửa" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm font-mono-num focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 mb-1">Ghi chú</label>
+          <input id="entryNote" type="text" placeholder="Không bắt buộc" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none">
+        </div>
+
+        <!-- Comparison preview -->
+        <div id="comparePreview" class="hidden sm:col-span-2 rounded-xl p-4 border flex items-center gap-3">
+          <div id="compareIconWrap" class="w-11 h-11 rounded-full flex items-center justify-center shrink-0 text-xl"></div>
+          <div class="min-w-0">
+            <p id="compareText" class="font-bold text-sm"></p>
+            <p id="compareSub" class="text-xs text-slate-500"></p>
+          </div>
+        </div>
+
+        <div class="sm:col-span-2 flex gap-3 pt-1">
+          <button type="submit" class="flex-1 sm:flex-none bg-teal-700 hover:bg-teal-800 text-white font-semibold px-6 py-2.5 rounded-lg text-sm shadow-sm transition">➕ Lưu chỉ số</button>
+          <button type="button" id="entryResetBtn" class="px-5 py-2.5 rounded-lg text-sm font-semibold border border-slate-300 text-slate-600 hover:bg-slate-50 transition">Xoá form</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Quick recent entries -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
+      <h3 class="font-bold text-slate-800 mb-3 text-sm flex items-center gap-2"><span class="w-1.5 h-4 bg-slate-400 rounded-full"></span>5 lần nhập gần nhất</h3>
+      <div id="recentList" class="space-y-2 text-sm"></div>
+    </div>
+  </section>
+
+  <!-- ===================== TAB: DANH SÁCH ĐỒNG HỒ ===================== -->
+  <section id="panel-meters" class="tab-panel space-y-4">
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="font-bold text-slate-800 flex items-center gap-2"><span class="w-1.5 h-5 bg-teal-600 rounded-full"></span>Danh sách đồng hồ</h2>
+        <button id="openMeterModalBtn" class="bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow-sm">+ Thêm đồng hồ</button>
+      </div>
+
+      <div class="flex flex-wrap gap-2 mb-4">
+        <select id="meterFilterBranch" class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"><option value="">Tất cả chi nhánh</option></select>
+        <select id="meterFilterPlant" class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"><option value="">Tất cả nhà máy</option></select>
+        <input id="meterFilterSearch" type="text" placeholder="🔎 Tìm ID / vị trí / khu vực..." class="border border-slate-300 rounded-lg px-3 py-2 text-sm flex-1 min-w-[180px]">
+      </div>
+
+      <div class="overflow-x-auto rounded-lg border border-slate-200">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-100 text-slate-500 text-xs uppercase">
+            <tr>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Chi nhánh</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Nhà máy nước</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Loại nước</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Khu vực cấp</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Vị trí lắp</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">ID đồng hồ</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Loại</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Tình trạng</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Đường kính</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Trạng thái</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Ghi chú</th>
+              <th class="text-center px-3 py-2.5 whitespace-nowrap">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody id="meterTableBody" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+      <p id="meterEmptyState" class="hidden text-center text-slate-400 text-sm py-8">Chưa có đồng hồ nào phù hợp bộ lọc.</p>
+    </div>
+  </section>
+
+  <!-- ===================== TAB: LỊCH SỬ & LỌC ===================== -->
+  <section id="panel-history" class="tab-panel space-y-4">
+
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div class="bg-white rounded-xl border border-slate-200 p-3 text-center shadow-sm">
+        <p class="text-[11px] text-slate-400">Tổng đồng hồ</p>
+        <p id="statTotalMeters" class="text-xl font-extrabold text-slate-800">0</p>
+      </div>
+      <div class="bg-emerald-50 rounded-xl border border-emerald-200 p-3 text-center shadow-sm">
+        <p class="text-[11px] text-emerald-600">Cập nhật hàng ngày</p>
+        <p id="statGreen" class="text-xl font-extrabold text-emerald-700">0</p>
+      </div>
+      <div class="bg-amber-50 rounded-xl border border-amber-200 p-3 text-center shadow-sm">
+        <p class="text-[11px] text-amber-600">Không cập nhật</p>
+        <p id="statAmber" class="text-xl font-extrabold text-amber-700">0</p>
+      </div>
+      <div class="bg-red-50 rounded-xl border border-red-200 p-3 text-center shadow-sm">
+        <p class="text-[11px] text-red-500">Ngưng / không rõ</p>
+        <p id="statRed" class="text-xl font-extrabold text-red-600">0</p>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
+      <h2 class="font-bold text-slate-800 mb-4 flex items-center gap-2"><span class="w-1.5 h-5 bg-teal-600 rounded-full"></span>Lịch sử nhập &amp; bộ lọc</h2>
+
+      <div class="flex flex-wrap gap-2 mb-4">
+        <select id="histFilterBranch" class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"><option value="">Tất cả chi nhánh</option></select>
+        <select id="histFilterPlant" class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"><option value="">Tất cả nhà máy</option></select>
+        <select id="histFilterMeter" class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"><option value="">Tất cả đồng hồ</option></select>
+        <select id="histFilterStatus" class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white">
+          <option value="">Tất cả trạng thái</option>
+          <option value="Cập nhật hàng ngày">🟢 Cập nhật hàng ngày</option>
+          <option value="Không cập nhật hàng ngày">🟡 Không cập nhật hàng ngày</option>
+          <option value="Ngưng sử dụng">🔴 Ngưng sử dụng</option>
+          <option value="Không có thông tin">🔴 Không có thông tin</option>
+          <option value="Thiếu thông tin tiêu thụ">🔴 Thiếu thông tin tiêu thụ</option>
+        </select>
+        <input id="histFilterFrom" type="date" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+        <input id="histFilterTo" type="date" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+        <button id="histFilterClear" class="text-sm text-teal-700 font-semibold px-2">Xoá lọc</button>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+          <span class="flex items-center gap-1"><span class="badge-dot bg-emerald-500"></span>Cập nhật hàng ngày</span>
+          <span class="flex items-center gap-1"><span class="badge-dot bg-amber-500"></span>Không cập nhật hàng ngày</span>
+          <span class="flex items-center gap-1"><span class="badge-dot bg-red-500"></span>Ngưng sử dụng / Không có thông tin</span>
+        </div>
+        <button id="histBulkDeleteBtn" disabled class="text-xs font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed px-3 py-1.5 rounded-lg whitespace-nowrap">🗑️ Xóa mục đã chọn (<span id="histSelectedCount">0</span>)</button>
+      </div>
+
+      <div class="overflow-x-auto rounded-lg border border-slate-200">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-100 text-slate-500 text-xs uppercase">
+            <tr>
+              <th class="px-3 py-2.5 w-8"><input type="checkbox" id="histSelectAll" title="Chọn tất cả"></th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Ngày</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Chi nhánh</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Nhà máy nước</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Cấp cho</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Vị trí</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">ID</th>
+              <th class="text-right px-3 py-2.5 whitespace-nowrap">Chỉ số</th>
+              <th class="text-right px-3 py-2.5 whitespace-nowrap">Tiêu thụ</th>
+              <th class="text-center px-3 py-2.5 whitespace-nowrap">So kỳ trước</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Ghi chú</th>
+              <th class="text-center px-3 py-2.5 whitespace-nowrap">Xóa</th>
+            </tr>
+          </thead>
+          <tbody id="historyTableBody" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+      <p id="histEmptyState" class="hidden text-center text-slate-400 text-sm py-8">Không có dữ liệu phù hợp.</p>
+      <p id="histCount" class="text-xs text-slate-400 mt-2"></p>
+    </div>
+  </section>
+
+  <!-- ===================== TAB: PHÂN TÍCH & SO SÁNH ===================== -->
+  <section id="panel-analysis" class="tab-panel space-y-4">
+
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
+      <h2 class="font-bold text-slate-800 mb-4 flex items-center gap-2"><span class="w-1.5 h-5 bg-teal-600 rounded-full"></span>Phân tích &amp; so sánh khối lượng tiêu thụ</h2>
+
+      <!-- Bộ lọc phạm vi -->
+      <div class="flex flex-wrap gap-2 mb-3">
+        <select id="anaFilterBranch" class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"><option value="">Tất cả chi nhánh</option></select>
+        <select id="anaFilterArea" class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"><option value="">Tất cả khu vực</option></select>
+        <select id="anaFilterMeter" class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"><option value="">Tất cả đồng hồ</option></select>
+      </div>
+
+      <!-- Bộ chọn kiểu so sánh + mốc thời gian -->
+      <div class="flex flex-wrap items-center gap-3 mb-5 bg-slate-50 border border-dashed border-slate-300 rounded-xl p-3">
+        <div class="flex items-center gap-2">
+          <label class="text-xs font-semibold text-slate-500 whitespace-nowrap">Kiểu so sánh:</label>
+          <select id="anaCompareType" class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white font-semibold text-teal-700">
+            <option value="day">Theo Ngày</option>
+            <option value="week">Theo Tuần</option>
+            <option value="month" selected>Theo Tháng</option>
+            <option value="year">Theo Năm</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-xs font-semibold text-slate-500 whitespace-nowrap">Kỳ này:</label>
+          <input id="anaThisPeriod" type="month" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+        </div>
+        <span class="text-slate-300 font-bold hidden sm:inline">so với</span>
+        <div class="flex items-center gap-2">
+          <label class="text-xs font-semibold text-slate-500 whitespace-nowrap">Kỳ trước:</label>
+          <input id="anaPrevPeriod" type="month" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+        </div>
+        <span id="anaThresholdLabel" class="text-[11px] text-slate-400 sm:ml-auto whitespace-nowrap">Ngưỡng cảnh báo sai lệch: <b class="text-red-500">±30%</b></span>
+      </div>
+
+      <!-- KPI Cards -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+        <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
+          <p class="text-xs font-bold text-rose-600 mb-2 flex items-center gap-1">🔺 Tăng tiêu thụ nhiều nhất</p>
+          <div id="anaKpiUp" class="text-sm text-slate-400">Không có dữ liệu phù hợp.</div>
+        </div>
+        <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+          <p class="text-xs font-bold text-emerald-600 mb-2 flex items-center gap-1">🔻 Giảm (hoặc ít thay đổi) nhiều nhất</p>
+          <div id="anaKpiDown" class="text-sm text-slate-400">Không có dữ liệu phù hợp.</div>
+        </div>
+      </div>
+
+      <!-- Bảng chi tiết so sánh -->
+      <div class="overflow-x-auto rounded-lg border border-slate-200">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-100 text-slate-500 text-xs uppercase">
+            <tr>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Mã ĐH</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Chi nhánh</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Khu vực / Vị trí</th>
+              <th class="text-right px-3 py-2.5 whitespace-nowrap">Kỳ Trước (m³)</th>
+              <th class="text-right px-3 py-2.5 whitespace-nowrap">Kỳ Này (m³)</th>
+              <th class="text-right px-3 py-2.5 whitespace-nowrap">Chênh lệch (m³)</th>
+              <th class="text-center px-3 py-2.5 whitespace-nowrap">% Thay đổi</th>
+            </tr>
+          </thead>
+          <tbody id="anaTableBody" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+      <p id="anaEmptyState" class="hidden text-center text-slate-400 text-sm py-8">Không có dữ liệu phù hợp với bộ lọc / khoảng thời gian đã chọn.</p>
+      <p id="anaCount" class="text-xs text-slate-400 mt-2"></p>
+    </div>
+  </section>
+
+  <!-- ===================== TAB: SAO LƯU DỮ LIỆU ===================== -->
+  <section id="panel-backup" class="tab-panel space-y-4">
+
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
+      <h2 class="font-bold text-slate-800 mb-2 flex items-center gap-2"><span class="w-1.5 h-5 bg-teal-600 rounded-full"></span>☁️ Đồng bộ Firebase</h2>
+      <p class="text-sm text-slate-500 mb-4">Dữ liệu tự động đồng bộ hai chiều với Firestore mỗi khi bạn thêm/sửa/xoá. Nếu đây là lần đầu chuyển từ dữ liệu cũ (lưu trong trình duyệt) lên Firebase, hãy dùng nút bên dưới để đẩy toàn bộ dữ liệu hiện có lên đám mây một lần.</p>
+      <div class="flex flex-wrap items-center gap-3">
+        <button id="pushLocalToCloudBtn" class="bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold px-4 py-2 rounded-lg">📤 Đẩy dữ liệu cũ (trên máy này) lên Firebase</button>
+        <span id="backupSyncStatus" class="text-xs text-slate-400"></span>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
+      <h2 class="font-bold text-slate-800 mb-2 flex items-center gap-2"><span class="w-1.5 h-5 bg-teal-600 rounded-full"></span>Sao lưu &amp; khôi phục dữ liệu</h2>
+      <p class="text-sm text-slate-500 mb-5">Ngoài Firebase, bạn vẫn có thể xuất file JSON/CSV để dự phòng thủ công, hoặc nhập lại một bản backup cũ (việc nhập sẽ ghi đè dữ liệu hiện tại và cũng đồng bộ lên Firebase).</p>
+
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div class="border border-slate-200 rounded-xl p-4">
+          <h3 class="font-semibold text-sm mb-1">⬇️ Xuất dữ liệu</h3>
+          <p class="text-xs text-slate-400 mb-3">Tải toàn bộ dữ liệu (đồng hồ + lịch sử) về máy.</p>
+          <div class="flex flex-wrap gap-2">
+            <button id="exportJsonBtn" class="bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold px-4 py-2 rounded-lg">Xuất JSON (backup)</button>
+            <button id="exportCsvBtn" class="bg-white border border-teal-700 text-teal-700 hover:bg-teal-50 text-sm font-semibold px-4 py-2 rounded-lg">Xuất CSV (Excel)</button>
+          </div>
+        </div>
+        <div class="border border-slate-200 rounded-xl p-4">
+          <h3 class="font-semibold text-sm mb-1">⬆️ Nhập dữ liệu</h3>
+          <p class="text-xs text-slate-400 mb-3">Chọn file JSON đã xuất trước đó để khôi phục. <b class="text-red-500">Sẽ ghi đè</b> dữ liệu hiện tại.</p>
+          <label class="inline-block bg-white border border-slate-300 hover:bg-slate-50 text-sm font-semibold px-4 py-2 rounded-lg cursor-pointer">
+            Chọn file JSON...
+            <input id="importJsonInput" type="file" accept="application/json" class="hidden">
+          </label>
+        </div>
+      </div>
+
+      <div class="mt-5 border-t border-slate-100 pt-4">
+        <h3 class="font-semibold text-sm mb-2 text-red-500">⚠️ Vùng nguy hiểm</h3>
+        <button id="clearAllBtn" class="text-sm font-semibold text-red-600 border border-red-200 hover:bg-red-50 px-4 py-2 rounded-lg">Xoá toàn bộ dữ liệu &amp; nạp lại dữ liệu mẫu</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ===================== MODAL: THÊM/SỬA ĐỒNG HỒ ===================== -->
+<div id="meterModal" class="hidden fixed inset-0 z-40 modal-overlay flex items-end sm:items-center justify-center p-0 sm:p-4">
+  <div class="bg-white w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl max-h-[92vh] overflow-y-auto p-5 sm:p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h3 id="meterModalTitle" class="font-bold text-slate-800">Thêm đồng hồ mới</h3>
+      <button id="closeMeterModalBtn" class="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
+    </div>
+    <form id="meterForm" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <input type="hidden" id="meterId">
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 mb-1">Chi nhánh</label>
+        <select id="meterBranch" required class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white">
+          <option value="">— Chọn —</option>
+          <option>Hồ Tràm</option><option>Xuân Sơn</option><option>Châu Pha</option><option>Đất Đỏ</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 mb-1">Loại nguồn</label>
+        <select id="meterPlantType" required class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white">
+          <option value="">— Chọn —</option>
+          <option value="Nhà máy nước">Nhà máy nước</option>
+          <option value="Trạm tăng áp">Trạm tăng áp</option>
+        </select>
+      </div>
+      <div>
+        <label id="meterPlantLabel" class="block text-xs font-semibold text-slate-500 mb-1">Tên nhà máy nước</label>
+        <input id="meterPlant" list="plantSuggestions" required disabled placeholder="— Chọn loại nguồn trước —" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm disabled:bg-slate-100 disabled:text-slate-400">
+        <datalist id="plantSuggestions"></datalist>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 mb-1">Loại nước</label>
+        <select id="meterWaterType" required class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white">
+          <option value="">— Chọn —</option>
+          <option value="Nước sạch">Nước sạch</option>
+          <option value="Nước thô">Nước thô</option>
+        </select>
+      </div>
+      <div id="meterAreaWrap">
+        <label class="block text-xs font-semibold text-slate-500 mb-1">Cấp cho khu vực nào</label>
+        <input id="meterArea" placeholder="VD: Khu dân cư Phước Thuận" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 mb-1">Vị trí lắp đặt</label>
+        <input id="meterLocation" required placeholder="VD: Ngã 3 Phước Thuận" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 mb-1">ID đồng hồ nước</label>
+        <input id="meterCode" required placeholder="VD: HT-001" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm font-mono-num">
+      </div>
+      <div id="meterTypeWrap">
+        <label class="block text-xs font-semibold text-slate-500 mb-1">Loại đồng hồ</label>
+        <select id="meterType" required class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white">
+          <option value="">— Chọn —</option>
+          <option>Cơ khí</option><option>Điện từ</option><option>Siêu âm</option><option>Khác</option>
+        </select>
+      </div>
+      <div id="meterConditionWrap">
+        <label class="block text-xs font-semibold text-slate-500 mb-1">Tình trạng</label>
+        <select id="meterCondition" required class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white">
+          <option value="">— Chọn —</option>
+          <option>Bình thường</option>
+          <option>Chống thất thoát</option>
+          <option>Hỏng</option>
+          <option>Lắp mới</option>
+          <option>Phục Hồi</option>
+          <option>Thu lại</option>
+          <option>Vệ sinh lại</option>
+        </select>
+      </div>
+      <div id="meterDiameterWrap">
+        <label class="block text-xs font-semibold text-slate-500 mb-1">Đường kính <span class="text-slate-400 font-normal">(tự điền)</span></label>
+        <input id="meterDiameter" list="diameterSuggestions" required placeholder="VD: DN100" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm">
+        <datalist id="diameterSuggestions">
+          <option value="DN15"></option><option value="DN20"></option><option value="DN25"></option><option value="DN32"></option>
+          <option value="DN40"></option><option value="DN50"></option><option value="DN65"></option><option value="DN80"></option>
+          <option value="DN100"></option><option value="DN150"></option><option value="DN200"></option>
+        </datalist>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 mb-1">Trạng thái</label>
+        <select id="meterStatus" required class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white">
+          <option value="Cập nhật hàng ngày">🟢 Cập nhật hàng ngày</option>
+          <option value="Không cập nhật hàng ngày">🟡 Không cập nhật hàng ngày</option>
+          <option value="Ngưng sử dụng">🔴 Ngưng sử dụng</option>
+          <option value="Không có thông tin">🔴 Không có thông tin</option>
+          <option value="Thiếu thông tin tiêu thụ">🔴 Thiếu thông tin tiêu thụ</option>
+        </select>
+      </div>
+      <div class="sm:col-span-2">
+        <label class="block text-xs font-semibold text-slate-500 mb-1">Ghi chú</label>
+        <textarea id="meterNote" rows="2" placeholder="Không bắt buộc" class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm"></textarea>
+      </div>
+      <div class="sm:col-span-2 flex items-center gap-3 pt-2">
+        <button type="submit" class="flex-1 sm:flex-none bg-teal-700 hover:bg-teal-800 text-white font-semibold px-6 py-2.5 rounded-lg text-sm">Lưu đồng hồ</button>
+        <button type="button" id="deleteMeterBtn" class="hidden text-sm font-semibold text-red-600 border border-red-200 hover:bg-red-50 px-4 py-2.5 rounded-lg">Xoá đồng hồ này</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+</div><!-- /#appRoot -->
+
+<!-- Toast -->
+<div id="toastWrap" class="fixed top-3 left-1/2 -translate-x-1/2 z-50"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  const STORAGE_KEY = "water_meter_tracker_v1";
+  const BRANCHES = ["Hồ Tràm","Xuân Sơn","Châu Pha","Đất Đỏ"];
+  const WARN_THRESHOLD = 30; // % tăng vượt mức này -> cảnh báo
+
+  // ---------- FIREBASE ----------
+  const firebaseConfig = {
+    apiKey: "AIzaSyBl4QpbO2imYQjvUMBFvSJvlKbIUgjz2qU",
+    authDomain: "so-de-xuat-hang-ngay.firebaseapp.com",
+    projectId: "so-de-xuat-hang-ngay",
+    storageBucket: "so-de-xuat-hang-ngay.firebasestorage.app",
+    messagingSenderId: "808463356073",
+    appId: "1:808463356073:web:bd83802ed2d5ec731c99b8"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+  const stateDocRef = db.collection('dong_ho_nuoc_app').doc('state');
+
+  let currentUser = null;
+  let cloudReady = false;       // đã đăng nhập + đã gắn listener xong
+  let cloudDocExists = false;   // Firestore đã có dữ liệu chưa
+  let unsubscribeSnapshot = null;
+
+  function setSyncBadge(text, colorClass){
+    const el = document.getElementById('syncBadge');
+    if(!el) return;
+    el.textContent = text;
+    el.className = 'text-[11px] font-semibold whitespace-nowrap ' + colorClass;
+  }
+
+  function pushStateToCloud(){
+    if(!currentUser) return Promise.resolve();
+    setSyncBadge('🔄 Đang đồng bộ…', 'text-amber-200');
+    return stateDocRef.set({
+      meters: state.meters,
+      readings: state.readings,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: currentUser.email
+    }).then(()=>{
+      cloudDocExists = true;
+      setSyncBadge('🟢 Đã đồng bộ', 'text-emerald-200');
+    }).catch(err=>{
+      console.error('Lỗi đẩy dữ liệu lên Firebase:', err);
+      setSyncBadge('🔴 Lỗi đồng bộ', 'text-red-200');
+      toast('⚠️ Không đồng bộ được lên Firebase: ' + err.message, 'err');
+    });
+  }
+
+  function startCloudSync(){
+    if(unsubscribeSnapshot) unsubscribeSnapshot();
+    unsubscribeSnapshot = stateDocRef.onSnapshot(function(doc){
+      cloudDocExists = doc.exists;
+      if(!doc.exists){
+        setSyncBadge('☁️ Chưa có dữ liệu trên đám mây', 'text-amber-200');
+        cloudReady = true;
+        return;
+      }
+      // Bỏ qua "echo" của chính lần ghi cục bộ (đã cập nhật UI rồi)
+      if(doc.metadata.hasPendingWrites){
+        cloudReady = true;
+        return;
+      }
+      const data = doc.data();
+      const incoming = JSON.stringify({meters: data.meters||[], readings: data.readings||[]});
+      const currentJson = JSON.stringify({meters: state.meters, readings: state.readings});
+      if(incoming !== currentJson){
+        state = {meters: data.meters||[], readings: data.readings||[]};
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        if(cloudReady) toast('🔄 Dữ liệu vừa được cập nhật từ thiết bị/người dùng khác.');
+        renderAll();
+      }
+      setSyncBadge('🟢 Đã đồng bộ', 'text-emerald-200');
+      cloudReady = true;
+    }, function(err){
+      console.error('Lỗi lắng nghe Firestore:', err);
+      setSyncBadge('🔴 Mất kết nối đồng bộ', 'text-red-200');
+    });
+  }
+
+  // ---------- AUTH ----------
+  const authOverlay = document.getElementById('authOverlay');
+  const appRoot = document.getElementById('appRoot');
+
+  auth.onAuthStateChanged(function(user){
+    currentUser = user;
+    if(user){
+      authOverlay.classList.add('hidden');
+      appRoot.classList.remove('hidden');
+      document.getElementById('userEmailLabel').textContent = user.email;
+      startCloudSync();
+      renderAll();
+    }else{
+      cloudReady = false;
+      if(unsubscribeSnapshot){ unsubscribeSnapshot(); unsubscribeSnapshot = null; }
+      appRoot.classList.add('hidden');
+      authOverlay.classList.remove('hidden');
+      document.getElementById('loginPassword').value = '';
+    }
+  });
+
+  document.getElementById('loginForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    const errEl = document.getElementById('loginError');
+    const btn = document.getElementById('loginSubmitBtn');
+    errEl.classList.add('hidden');
+    btn.disabled = true; btn.textContent = 'Đang đăng nhập…';
+    auth.signInWithEmailAndPassword(email, password)
+      .catch(function(err){
+        const map = {
+          'auth/invalid-email': 'Email không hợp lệ.',
+          'auth/user-disabled': 'Tài khoản đã bị vô hiệu hoá.',
+          'auth/user-not-found': 'Sai email hoặc mật khẩu.',
+          'auth/wrong-password': 'Sai email hoặc mật khẩu.',
+          'auth/invalid-credential': 'Sai email hoặc mật khẩu.',
+          'auth/too-many-requests': 'Bạn thử sai quá nhiều lần, vui lòng chờ rồi thử lại.'
+        };
+        errEl.textContent = map[err.code] || ('Đăng nhập thất bại: ' + err.message);
+        errEl.classList.remove('hidden');
+      })
+      .finally(function(){
+        btn.disabled = false; btn.textContent = 'Đăng nhập';
+      });
+  });
+
+  document.getElementById('logoutBtn').addEventListener('click', function(){
+    if(!confirm('Đăng xuất khỏi ứng dụng?')) return;
+    auth.signOut();
+  });
+
+  const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2));
+  const todayStr = () => new Date().toISOString().slice(0,10);
+  const fmtNum = (n) => (n === null || n === undefined || isNaN(n)) ? "—" : Number(n).toLocaleString('vi-VN',{maximumFractionDigits:2});
+  const fmtDate = (d) => { if(!d) return "—"; const [y,m,dd]=d.split('-'); return `${dd}/${m}/${y}`; };
+  const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  function statusColorClass(status){
+    if(status === 'Cập nhật hàng ngày') return 'row-green';
+    if(status === 'Không cập nhật hàng ngày') return 'row-amber';
+    return 'row-red'; // Ngưng sử dụng / Không có thông tin
+  }
+  function statusDot(status){
+    if(status === 'Cập nhật hàng ngày') return '<span class="badge-dot bg-emerald-500"></span>';
+    if(status === 'Không cập nhật hàng ngày') return '<span class="badge-dot bg-amber-500"></span>';
+    return '<span class="badge-dot bg-red-500"></span>';
+  }
+
+  // ---------- MOCK DATA ----------
+  function buildMockData(){
+    const meters = [
+      {id:uid(), branch:"Hồ Tràm", plant:"NM nước Hồ Tràm 1", plantType:"Nhà máy nước", waterType:"Nước sạch", area:"Khu dân cư Phước Thuận", location:"Ngã 3 Phước Thuận", code:"HT-001", type:"Cơ khí", condition:"Bình thường", diameter:"DN100", status:"Cập nhật hàng ngày", note:""},
+      {id:uid(), branch:"Hồ Tràm", plant:"NM nước Hồ Tràm 1", plantType:"Nhà máy nước", waterType:"Nước sạch", area:"KCN Hồ Tràm", location:"Cổng số 2 KCN", code:"HT-002", type:"Điện từ", condition:"Chống thất thoát", diameter:"DN150", status:"Không cập nhật hàng ngày", note:"Chờ thay dây tín hiệu"},
+      {id:uid(), branch:"Hồ Tràm", plant:"Trạm tăng áp Hồ Tràm 2", plantType:"Trạm tăng áp", waterType:"Nước sạch", area:"Khu resort ven biển", location:"Trạm bơm tăng áp số 3", code:"HT-003", type:"Siêu âm", condition:"Bình thường", diameter:"DN80", status:"Cập nhật hàng ngày", note:""},
+      {id:uid(), branch:"Xuân Sơn", plant:"NM nước Xuân Sơn", plantType:"Nhà máy nước", waterType:"Nước thô", area:"", location:"Đầu tuyến ống chính", code:"XS-001", type:"Cơ khí", condition:"Bình thường", diameter:"DN100", status:"Cập nhật hàng ngày", note:""},
+      {id:uid(), branch:"Xuân Sơn", plant:"NM nước Xuân Sơn", plantType:"Nhà máy nước", waterType:"Nước sạch", area:"Khu tái định cư", location:"Cổng khu TĐC", code:"XS-002", type:"Cơ khí", condition:"Phục Hồi", diameter:"DN50", status:"Không cập nhật hàng ngày", note:""},
+      {id:uid(), branch:"Châu Pha", plant:"NM nước Châu Pha", plantType:"Nhà máy nước", waterType:"Nước sạch", area:"KCN Châu Pha", location:"Trạm van tổng", code:"CP-001", type:"Điện từ", condition:"Bình thường", diameter:"DN200", status:"Cập nhật hàng ngày", note:""},
+      {id:uid(), branch:"Châu Pha", plant:"NM nước Châu Pha", plantType:"Nhà máy nước", waterType:"Nước sạch", area:"Khu dân cư thôn 3", location:"Ngã tư thôn 3", code:"CP-002", type:"Cơ khí", condition:"Hỏng", diameter:"DN65", status:"Không có thông tin", note:"Chưa xác định vị trí chính xác"},
+      {id:uid(), branch:"Đất Đỏ", plant:"NM nước Đất Đỏ", plantType:"Nhà máy nước", waterType:"Nước sạch", area:"Thị trấn Đất Đỏ", location:"Trạm cấp trung tâm", code:"DD-001", type:"Điện từ", condition:"Lắp mới", diameter:"DN150", status:"Cập nhật hàng ngày", note:""},
+      {id:uid(), branch:"Đất Đỏ", plant:"NM nước Đất Đỏ", plantType:"Nhà máy nước", waterType:"Nước sạch", area:"Khu vực cũ (đã ngưng)", location:"Tuyến ống cũ", code:"DD-002", type:"Cơ khí", condition:"Thu lại", diameter:"DN50", status:"Ngưng sử dụng", note:"Ngưng cấp từ 2024"}
+    ];
+
+    const readings = [];
+    const dayOffsets = [4,3,2,1,0]; // 5 ngày gần đây
+    const baseIndex = {"HT-001":15000,"HT-002":22000,"HT-003":8000,"XS-001":12000,"XS-002":5000,"CP-001":30000,"CP-002":4000,"DD-001":18000,"DD-002":9000};
+    const baseVol = {"HT-001":120,"HT-002":210,"HT-003":90,"XS-001":140,"XS-002":60,"CP-001":300,"CP-002":40,"DD-001":170,"DD-002":0};
+
+    meters.forEach(m=>{
+      let idx = baseIndex[m.code] || 1000;
+      dayOffsets.forEach((off,i)=>{
+        const d = new Date(); d.setDate(d.getDate()-off);
+        const dateStr = d.toISOString().slice(0,10);
+        let vol = (baseVol[m.code] || 50) + Math.round((Math.random()*20-8));
+        if(m.code === "HT-002" && i === dayOffsets.length-1) vol = Math.round((baseVol[m.code])*1.6); // demo tăng đột biến
+        if(m.status === "Ngưng sử dụng") vol = 0;
+        idx += vol;
+        readings.push({id:uid(), meterId:m.id, date:dateStr, index:idx, volume:vol, note:""});
+      });
+    });
+
+    return {meters, readings};
+  }
+
+  function loadState(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        const parsed = JSON.parse(raw);
+        if(parsed && Array.isArray(parsed.meters) && Array.isArray(parsed.readings)) return parsed;
+      }
+    }catch(e){ console.warn("Không đọc được dữ liệu cũ:", e); }
+    const mock = buildMockData();
+    saveState(mock);
+    return mock;
+  }
+  function saveState(s){
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+    if(cloudReady) pushStateToCloud();
+  }
+
+  let state = loadState();
+
+  // ---------- TOAST ----------
+  function toast(msg, type='ok'){
+    const wrap = document.getElementById('toastWrap');
+    const colors = {ok:'bg-slate-800', err:'bg-red-600', warn:'bg-amber-600'};
+    const el = document.createElement('div');
+    el.className = `toast ${colors[type]||colors.ok} text-white text-sm font-medium px-4 py-2.5 rounded-lg shadow-lg mb-2`;
+    el.textContent = msg;
+    wrap.appendChild(el);
+    setTimeout(()=> el.remove(), 3000);
+  }
+
+  // ---------- TABS ----------
+  document.querySelectorAll('.tab-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+      if(btn.dataset.tab === 'meters') renderMeterTable();
+      if(btn.dataset.tab === 'history') { renderHistoryFilters(); renderHistoryTable(); renderStats(); }
+      if(btn.dataset.tab === 'analysis') { renderAnalysisFilters(); renderAnalysisTable(); }
+    });
+  });
+
+  // ---------- HELPERS: GET DATA ----------
+  function plantsOf(branch){
+    return [...new Set(state.meters.filter(m=>m.branch===branch).map(m=>m.plant))];
+  }
+  function metersOf(branch, plant){
+    return state.meters.filter(m => (!branch || m.branch===branch) && (!plant || m.plant===plant));
+  }
+  function readingsOfMeter(meterId){
+    return state.readings.filter(r=>r.meterId===meterId).sort((a,b)=> a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  }
+  function latestReadingBefore(meterId, dateStr){
+    const list = readingsOfMeter(meterId).filter(r=> r.date < dateStr || (r.date === dateStr));
+    // strictly earlier first; if same-date entries exist take latest earlier date
+    const earlier = readingsOfMeter(meterId).filter(r=> r.date < dateStr);
+    if(earlier.length) return earlier[earlier.length-1];
+    return null;
+  }
+  function meterById(id){ return state.meters.find(m=>m.id===id); }
+
+  // Các trạng thái đặc biệt không bị ghi đè bởi cơ chế tự động cập nhật hàng ngày
+  const AUTO_STATUS_EXCLUDE = ['Ngưng sử dụng','Thiếu thông tin tiêu thụ','Không có thông tin'];
+  function autoUpdateDailyStatus(){
+    const today = todayStr();
+    let changed = false;
+    state.meters.forEach(m=>{
+      if(AUTO_STATUS_EXCLUDE.includes(m.status)) return;
+      const hasToday = state.readings.some(r=> r.meterId===m.id && r.date===today && r.index!==null && r.index!==undefined && !isNaN(r.index) && r.volume!==null && r.volume!==undefined && !isNaN(r.volume));
+      const newStatus = hasToday ? 'Cập nhật hàng ngày' : 'Không cập nhật hàng ngày';
+      if(m.status !== newStatus){ m.status = newStatus; changed = true; }
+    });
+    if(changed) saveState(state);
+    return changed;
+  }
+
+  // ---------- ENTRY FORM: populate selects ----------
+  function fillSelect(sel, options, placeholder){
+    sel.innerHTML = `<option value="">${placeholder}</option>` + options.map(o=>`<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('');
+  }
+
+  function initEntryBranchSelect(){
+    fillSelect(document.getElementById('entryBranch'), BRANCHES, '— Chọn chi nhánh —');
+  }
+
+  document.getElementById('entryBranch').addEventListener('change', function(){
+    const branch = this.value;
+    const plantSel = document.getElementById('entryPlant');
+    const meterSel = document.getElementById('entryMeter');
+    if(!branch){
+      plantSel.disabled = true; plantSel.innerHTML = '<option value="">— Chọn chi nhánh trước —</option>';
+      meterSel.disabled = true; meterSel.innerHTML = '<option value="">— Chọn nhà máy trước —</option>';
+      hideRefCard(); return;
+    }
+    plantSel.disabled = false;
+    fillSelect(plantSel, plantsOf(branch), '— Chọn nhà máy —');
+    meterSel.disabled = true; meterSel.innerHTML = '<option value="">— Chọn nhà máy trước —</option>';
+    hideRefCard();
+  });
+
+  document.getElementById('entryPlant').addEventListener('change', function(){
+    const branch = document.getElementById('entryBranch').value;
+    const plant = this.value;
+    const meterSel = document.getElementById('entryMeter');
+    if(!plant){ meterSel.disabled = true; meterSel.innerHTML = '<option value="">— Chọn nhà máy trước —</option>'; hideRefCard(); return; }
+    meterSel.disabled = false;
+    const HIDDEN_ENTRY_STATUS = ['Ngưng sử dụng','Thiếu thông tin tiêu thụ'];
+    const HIDDEN_ENTRY_CONDITION = ['Chống thất thoát','Thu lại'];
+    const list = metersOf(branch, plant).filter(m=> !HIDDEN_ENTRY_STATUS.includes(m.status) && !HIDDEN_ENTRY_CONDITION.includes(m.condition));
+    meterSel.innerHTML = '<option value="">— Chọn đồng hồ —</option>' + list.map(m=>`<option value="${m.id}">${escapeHtml(m.code)} · ${escapeHtml(m.area)} · ${escapeHtml(m.location)}</option>`).join('');
+    hideRefCard();
+  });
+
+  document.getElementById('entryMeter').addEventListener('change', function(){
+    if(!this.value){ hideRefCard(); updateEntryRequiredState(null); return; }
+    showRefCard(this.value);
+    updateEntryRequiredState(this.value);
+    suggestVolume();
+  });
+
+  function updateEntryRequiredState(meterId){
+    const idxInput = document.getElementById('entryIndex');
+    const volInput = document.getElementById('entryVolume');
+    const meter = meterId ? meterById(meterId) : null;
+    if(meter && meter.status === 'Thiếu thông tin tiêu thụ'){
+      idxInput.removeAttribute('required');
+      volInput.removeAttribute('required');
+      idxInput.placeholder = 'Không bắt buộc — đồng hồ thiếu thông tin tiêu thụ';
+      volInput.placeholder = 'Không bắt buộc — đồng hồ thiếu thông tin tiêu thụ';
+    }else{
+      idxInput.setAttribute('required','required');
+      volInput.setAttribute('required','required');
+      idxInput.placeholder = 'VD: 15234.5';
+      volInput.placeholder = 'Tự gợi ý, có thể sửa';
+    }
+  }
+
+  function hideRefCard(){
+    document.getElementById('refCard').classList.add('hidden');
+    document.getElementById('comparePreview').classList.add('hidden');
+  }
+
+  function showRefCard(meterId){
+    const meter = meterById(meterId);
+    const list = readingsOfMeter(meterId);
+    const last = list.length ? list[list.length-1] : null;
+    document.getElementById('refOldIndex').textContent = last ? fmtNum(last.index) : 'Chưa có dữ liệu';
+    document.getElementById('refOldDate').textContent = last ? fmtDate(last.date) : '—';
+    document.getElementById('refOldVolume').textContent = last ? fmtNum(last.volume) + ' m³' : '—';
+    const statusEl = document.getElementById('refStatus');
+    statusEl.innerHTML = statusDot(meter.status) + ' <span class="ml-1">' + escapeHtml(meter.status) + '</span>';
+    document.getElementById('refCard').classList.remove('hidden');
+  }
+
+  function suggestVolume(){
+    const meterId = document.getElementById('entryMeter').value;
+    if(!meterId) return;
+    const list = readingsOfMeter(meterId);
+    const last = list.length ? list[list.length-1] : null;
+    const idxInput = document.getElementById('entryIndex');
+    const volInput = document.getElementById('entryVolume');
+    if(last && idxInput.value !== ''){
+      const diff = parseFloat(idxInput.value) - parseFloat(last.index);
+      if(!isNaN(diff)) volInput.value = Math.max(diff,0).toFixed(2);
+    }
+    updateComparePreview();
+  }
+  document.getElementById('entryIndex').addEventListener('input', suggestVolume);
+  document.getElementById('entryVolume').addEventListener('input', updateComparePreview);
+
+  function updateComparePreview(){
+    const meterId = document.getElementById('entryMeter').value;
+    const volInput = document.getElementById('entryVolume').value;
+    const box = document.getElementById('comparePreview');
+    if(!meterId || volInput === ''){ box.classList.add('hidden'); return; }
+    const list = readingsOfMeter(meterId);
+    const last = list.length ? list[list.length-1] : null;
+    if(!last){ box.classList.add('hidden'); return; }
+
+    const newVol = parseFloat(volInput);
+    const oldVol = parseFloat(last.volume);
+    const iconWrap = document.getElementById('compareIconWrap');
+    const textEl = document.getElementById('compareText');
+    const subEl = document.getElementById('compareSub');
+
+    let pct = oldVol === 0 ? (newVol > 0 ? 100 : 0) : ((newVol - oldVol) / oldVol) * 100;
+    const increased = newVol > oldVol;
+
+    box.classList.remove('hidden');
+    if(increased){
+      const isWarn = pct >= WARN_THRESHOLD;
+      box.className = 'sm:col-span-2 rounded-xl p-4 border flex items-center gap-3 ' + (isWarn ? 'bg-red-50 border-red-200' : 'bg-rose-50 border-rose-200');
+      iconWrap.className = 'w-11 h-11 rounded-full flex items-center justify-center shrink-0 text-xl ' + (isWarn ? 'bg-red-100' : 'bg-rose-100');
+      iconWrap.innerHTML = isWarn ? '⚠️' : '🔺';
+      textEl.className = 'font-bold text-sm ' + (isWarn ? 'text-red-700' : 'text-rose-700');
+      textEl.textContent = `Tăng ${pct.toFixed(1)}% so với kỳ trước` + (isWarn ? ' — Chênh lệch bất thường!' : '');
+      subEl.textContent = `${fmtNum(oldVol)} m³ → ${fmtNum(newVol)} m³`;
+    }else{
+      box.className = 'sm:col-span-2 rounded-xl p-4 border flex items-center gap-3 bg-emerald-50 border-emerald-200';
+      iconWrap.className = 'w-11 h-11 rounded-full flex items-center justify-center shrink-0 text-xl bg-emerald-100';
+      iconWrap.innerHTML = '🔻';
+      textEl.className = 'font-bold text-sm text-emerald-700';
+      textEl.textContent = newVol === oldVol ? 'Bằng kỳ trước' : `Giảm ${Math.abs(pct).toFixed(1)}% so với kỳ trước`;
+      subEl.textContent = `${fmtNum(oldVol)} m³ → ${fmtNum(newVol)} m³`;
+    }
+  }
+
+  // ---------- ENTRY FORM SUBMIT ----------
+  document.getElementById('entryDate').value = todayStr();
+  document.getElementById('todayLabel').textContent = fmtDate(todayStr());
+
+  document.getElementById('entryForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    const meterId = document.getElementById('entryMeter').value;
+    const meter = meterId ? meterById(meterId) : null;
+    const isMissingInfo = meter && meter.status === 'Thiếu thông tin tiêu thụ';
+    const date = document.getElementById('entryDate').value;
+    const indexRaw = document.getElementById('entryIndex').value;
+    const volumeRaw = document.getElementById('entryVolume').value;
+    const index = indexRaw === '' ? null : parseFloat(indexRaw);
+    const volume = volumeRaw === '' ? null : parseFloat(volumeRaw);
+    const note = document.getElementById('entryNote').value.trim();
+
+    if(!meterId){ toast('Vui lòng chọn đồng hồ.', 'err'); return; }
+    if(!isMissingInfo && (index===null || isNaN(index) || volume===null || isNaN(volume))){
+      toast('Vui lòng nhập đủ chỉ số và khối lượng.', 'err'); return;
+    }
+
+    const dup = state.readings.find(r=>r.meterId===meterId && r.date===date);
+    if(dup && !confirm('Đồng hồ này đã có dữ liệu ngày ' + fmtDate(date) + '. Ghi đè bản ghi cũ?')){
+      return;
+    }
+    if(dup){ state.readings = state.readings.filter(r=>r.id!==dup.id); }
+
+    state.readings.push({id:uid(), meterId, date, index, volume, note});
+    saveState(state);
+    autoUpdateDailyStatus();
+    toast('✅ Đã lưu chỉ số thành công.');
+    renderRecentList();
+    renderMeterTable();
+    renderMeterFilterSelects();
+    // giữ nguyên lựa chọn đồng hồ để tiện nhập tiếp, refresh reference
+    showRefCard(meterId);
+    document.getElementById('entryIndex').value='';
+    document.getElementById('entryVolume').value='';
+    document.getElementById('entryNote').value='';
+    document.getElementById('comparePreview').classList.add('hidden');
+  });
+
+  document.getElementById('entryResetBtn').addEventListener('click', function(){
+    document.getElementById('entryForm').reset();
+    document.getElementById('entryDate').value = todayStr();
+    document.getElementById('entryPlant').disabled = true;
+    document.getElementById('entryPlant').innerHTML = '<option value="">— Chọn chi nhánh trước —</option>';
+    document.getElementById('entryMeter').disabled = true;
+    document.getElementById('entryMeter').innerHTML = '<option value="">— Chọn nhà máy trước —</option>';
+    hideRefCard();
+  });
+
+  function renderRecentList(){
+    const wrap = document.getElementById('recentList');
+    const rows = [...state.readings].sort((a,b)=> b.date.localeCompare(a.date)).slice(0,5);
+    if(!rows.length){ wrap.innerHTML = '<p class="text-slate-400 text-sm">Chưa có dữ liệu.</p>'; return; }
+    wrap.innerHTML = rows.map(r=>{
+      const m = meterById(r.meterId);
+      if(!m) return '';
+      const prev = latestReadingBefore(r.meterId, r.date);
+      let trend = '';
+      if(prev){
+        const pct = prev.volume === 0 ? (r.volume>0?100:0) : ((r.volume-prev.volume)/prev.volume)*100;
+        trend = r.volume > prev.volume
+          ? `<span class="text-red-600 font-semibold text-xs">🔺 +${pct.toFixed(1)}%</span>`
+          : `<span class="text-emerald-600 font-semibold text-xs">🔻 ${pct.toFixed(1)}%</span>`;
+      }
+      return `<div class="flex items-center justify-between gap-2 border border-slate-100 rounded-lg px-3 py-2">
+        <div class="min-w-0">
+          <p class="font-semibold text-slate-700 truncate">${escapeHtml(m.code)} <span class="text-slate-400 font-normal">· ${escapeHtml(m.plant)}</span></p>
+          <p class="text-xs text-slate-400">${fmtDate(r.date)} · Chỉ số ${fmtNum(r.index)} · KL ${fmtNum(r.volume)} m³</p>
+        </div>
+        <div class="flex items-center gap-3 shrink-0">
+          ${trend}
+          <button class="text-red-500 hover:underline text-xs font-semibold del-recent-btn" data-id="${r.id}">Xoá</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    document.querySelectorAll('.del-recent-btn').forEach(btn=>{
+      btn.addEventListener('click', function(){
+        if(!confirm('Xoá bản ghi này?')) return;
+        state.readings = state.readings.filter(r=>r.id!==btn.dataset.id);
+        selectedHistoryIds.delete(btn.dataset.id);
+        saveState(state);
+        autoUpdateDailyStatus();
+        renderRecentList(); renderHistoryTable(); renderStats(); renderMeterTable(); renderMeterFilterSelects();
+        toast('🗑️ Đã xoá bản ghi.');
+      });
+    });
+  }
+
+  // ---------- METER MANAGEMENT ----------
+  function renderMeterFilterSelects(){
+    fillSelect(document.getElementById('meterFilterBranch'), BRANCHES, 'Tất cả chi nhánh');
+  }
+  document.getElementById('meterFilterBranch').addEventListener('change', function(){
+    const plantSel = document.getElementById('meterFilterPlant');
+    if(!this.value){ fillSelect(plantSel, [], 'Tất cả nhà máy'); }
+    else fillSelect(plantSel, plantsOf(this.value), 'Tất cả nhà máy');
+    renderMeterTable();
+  });
+  document.getElementById('meterFilterPlant').addEventListener('change', renderMeterTable);
+  document.getElementById('meterFilterSearch').addEventListener('input', renderMeterTable);
+
+  function renderMeterTable(){
+    const branch = document.getElementById('meterFilterBranch').value;
+    const plant = document.getElementById('meterFilterPlant').value;
+    const q = document.getElementById('meterFilterSearch').value.trim().toLowerCase();
+
+    let list = state.meters.filter(m=>{
+      if(branch && m.branch !== branch) return false;
+      if(plant && m.plant !== plant) return false;
+      if(q && !(`${m.code} ${m.location} ${m.area}`.toLowerCase().includes(q))) return false;
+      return true;
+    });
+
+    const tbody = document.getElementById('meterTableBody');
+    document.getElementById('meterEmptyState').classList.toggle('hidden', list.length>0);
+
+    tbody.innerHTML = list.map(m=>`
+      <tr class="${statusColorClass(m.status)} transition">
+        <td class="px-3 py-2.5 whitespace-nowrap">${escapeHtml(m.branch)}</td>
+        <td class="px-3 py-2.5 whitespace-nowrap">${escapeHtml(m.plant)}</td>
+        <td class="px-3 py-2.5 whitespace-nowrap">${m.waterType==='Nước thô' ? '<span class="text-amber-700 font-medium">Nước thô</span>' : '<span class="text-sky-700 font-medium">Nước sạch</span>'}</td>
+        <td class="px-3 py-2.5">${escapeHtml(m.area)||'—'}</td>
+        <td class="px-3 py-2.5">${escapeHtml(m.location)}</td>
+        <td class="px-3 py-2.5 font-mono-num font-semibold whitespace-nowrap">${escapeHtml(m.code)}</td>
+        <td class="px-3 py-2.5 whitespace-nowrap">${escapeHtml(m.type)}</td>
+        <td class="px-3 py-2.5 whitespace-nowrap">${escapeHtml(m.condition)||'—'}</td>
+        <td class="px-3 py-2.5 whitespace-nowrap">${escapeHtml(m.diameter)}</td>
+        <td class="px-3 py-2.5 whitespace-nowrap">${statusDot(m.status)} <span class="text-xs font-medium">${escapeHtml(m.status)}</span></td>
+        <td class="px-3 py-2.5 text-slate-500 text-xs max-w-[160px] truncate" title="${escapeHtml(m.note)}">${escapeHtml(m.note)||'—'}</td>
+        <td class="px-3 py-2.5 text-center whitespace-nowrap">
+          <button class="text-teal-700 hover:underline text-xs font-semibold edit-meter-btn" data-id="${m.id}">Sửa</button>
+        </td>
+      </tr>
+    `).join('');
+
+    document.querySelectorAll('.edit-meter-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=> openMeterModal(btn.dataset.id));
+    });
+
+    updatePlantDatalist();
+  }
+
+  function updatePlantDatalist(){
+    const dl = document.getElementById('plantSuggestions');
+    dl.innerHTML = [...new Set(state.meters.map(m=>m.plant))].map(p=>`<option value="${escapeHtml(p)}">`).join('');
+  }
+
+  // Modal open/close
+  const meterModal = document.getElementById('meterModal');
+  document.getElementById('openMeterModalBtn').addEventListener('click', ()=> openMeterModal(null));
+  document.getElementById('closeMeterModalBtn').addEventListener('click', closeMeterModal);
+  meterModal.addEventListener('click', (e)=> { if(e.target === meterModal) closeMeterModal(); });
+
+  function openMeterModal(meterId){
+    const form = document.getElementById('meterForm');
+    form.reset();
+    document.getElementById('meterId').value = meterId || '';
+    document.getElementById('deleteMeterBtn').classList.toggle('hidden', !meterId);
+    // reset trạng thái phụ thuộc: loại nguồn + tên nhà máy/trạm
+    document.getElementById('meterPlant').disabled = true;
+    document.getElementById('meterPlant').placeholder = '— Chọn loại nguồn trước —';
+    document.getElementById('meterPlantLabel').textContent = 'Tên nhà máy nước';
+    if(meterId){
+      const m = meterById(meterId);
+      document.getElementById('meterModalTitle').textContent = 'Sửa đồng hồ: ' + m.code;
+      document.getElementById('meterBranch').value = m.branch;
+      document.getElementById('meterPlantType').value = m.plantType || 'Nhà máy nước';
+      document.getElementById('meterPlantType').dispatchEvent(new Event('change'));
+      document.getElementById('meterPlant').value = m.plant;
+      document.getElementById('meterWaterType').value = m.waterType || 'Nước sạch';
+      document.getElementById('meterWaterType').dispatchEvent(new Event('change'));
+      document.getElementById('meterArea').value = m.area;
+      document.getElementById('meterLocation').value = m.location;
+      document.getElementById('meterCode').value = m.code;
+      document.getElementById('meterType').value = m.type;
+      document.getElementById('meterCondition').value = m.condition || '';
+      document.getElementById('meterDiameter').value = m.diameter;
+      document.getElementById('meterStatus').value = m.status;
+      document.getElementById('meterStatus').dispatchEvent(new Event('change'));
+      document.getElementById('meterNote').value = m.note;
+    }else{
+      document.getElementById('meterModalTitle').textContent = 'Thêm đồng hồ mới';
+      document.getElementById('meterWaterType').dispatchEvent(new Event('change'));
+      document.getElementById('meterStatus').dispatchEvent(new Event('change'));
+    }
+    updatePlantDatalist();
+    meterModal.classList.remove('hidden');
+  }
+  function closeMeterModal(){ meterModal.classList.add('hidden'); }
+
+  // Loại nguồn: chọn Nhà máy nước / Trạm tăng áp trước rồi mới cho nhập tên
+  document.getElementById('meterPlantType').addEventListener('change', function(){
+    const plantInput = document.getElementById('meterPlant');
+    const plantLabel = document.getElementById('meterPlantLabel');
+    if(this.value){
+      plantInput.disabled = false;
+      plantInput.placeholder = this.value === 'Trạm tăng áp' ? 'VD: Trạm tăng áp Hồ Tràm 2' : 'VD: NM nước Hồ Tràm 1';
+      plantLabel.textContent = this.value === 'Trạm tăng áp' ? 'Tên trạm tăng áp' : 'Tên nhà máy nước';
+    }else{
+      plantInput.disabled = true;
+      plantInput.value = '';
+      plantInput.placeholder = '— Chọn loại nguồn trước —';
+      plantLabel.textContent = 'Tên nhà máy nước';
+    }
+  });
+
+  // Loại nước: nếu là Nước thô thì ẩn mục "Cấp cho khu vực nào"
+  document.getElementById('meterWaterType').addEventListener('change', function(){
+    const areaWrap = document.getElementById('meterAreaWrap');
+    const areaInput = document.getElementById('meterArea');
+    if(this.value === 'Nước thô'){
+      areaWrap.classList.add('hidden');
+      areaInput.removeAttribute('required');
+      areaInput.value = '';
+    }else{
+      areaWrap.classList.remove('hidden');
+      areaInput.setAttribute('required','required');
+    }
+  });
+
+  // Trạng thái "Thiếu thông tin tiêu thụ": ẩn Loại đồng hồ, Tình trạng, Đường kính (không cần điền)
+  document.getElementById('meterStatus').addEventListener('change', function(){
+    const isMissing = this.value === 'Thiếu thông tin tiêu thụ';
+    [
+      {wrap:'meterTypeWrap', input:'meterType'},
+      {wrap:'meterConditionWrap', input:'meterCondition'},
+      {wrap:'meterDiameterWrap', input:'meterDiameter'}
+    ].forEach(({wrap, input})=>{
+      const wrapEl = document.getElementById(wrap);
+      const inputEl = document.getElementById(input);
+      if(isMissing){
+        wrapEl.classList.add('hidden');
+        inputEl.removeAttribute('required');
+      }else{
+        wrapEl.classList.remove('hidden');
+        inputEl.setAttribute('required','required');
+      }
+    });
+  });
+
+  document.getElementById('meterForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    const id = document.getElementById('meterId').value;
+    const code = document.getElementById('meterCode').value.trim();
+    const dupCode = state.meters.find(m=>m.code.toLowerCase()===code.toLowerCase() && m.id!==id);
+    if(dupCode){ toast('ID đồng hồ này đã tồn tại, vui lòng dùng ID khác.', 'err'); return; }
+
+    const data = {
+      branch: document.getElementById('meterBranch').value,
+      plantType: document.getElementById('meterPlantType').value,
+      plant: document.getElementById('meterPlant').value.trim(),
+      waterType: document.getElementById('meterWaterType').value,
+      area: document.getElementById('meterArea').value.trim(),
+      location: document.getElementById('meterLocation').value.trim(),
+      code,
+      type: document.getElementById('meterType').value,
+      condition: document.getElementById('meterCondition').value,
+      diameter: document.getElementById('meterDiameter').value.trim(),
+      status: document.getElementById('meterStatus').value,
+      note: document.getElementById('meterNote').value.trim()
+    };
+
+    if(id){
+      const idx = state.meters.findIndex(m=>m.id===id);
+      state.meters[idx] = {...state.meters[idx], ...data};
+      toast('✅ Đã cập nhật đồng hồ.');
+    }else{
+      state.meters.push({id:uid(), ...data});
+      toast('✅ Đã thêm đồng hồ mới.');
+    }
+    saveState(state);
+    closeMeterModal();
+    renderMeterFilterSelects();
+    renderMeterTable();
+    refreshAllDependentSelects();
+  });
+
+  document.getElementById('deleteMeterBtn').addEventListener('click', function(){
+    const id = document.getElementById('meterId').value;
+    if(!id) return;
+    const hasReadings = state.readings.some(r=>r.meterId===id);
+    const msg = hasReadings
+      ? 'Đồng hồ này đã có lịch sử nhập. Xoá sẽ xoá luôn toàn bộ lịch sử liên quan. Tiếp tục?'
+      : 'Xoá đồng hồ này?';
+    if(!confirm(msg)) return;
+    state.meters = state.meters.filter(m=>m.id!==id);
+    state.readings = state.readings.filter(r=>r.meterId!==id);
+    saveState(state);
+    toast('🗑️ Đã xoá đồng hồ.');
+    closeMeterModal();
+    renderMeterTable();
+    refreshAllDependentSelects();
+  });
+
+  // ---------- HISTORY & FILTERS ----------
+  let selectedHistoryIds = new Set();
+
+  function renderHistoryFilters(){
+    fillSelect(document.getElementById('histFilterBranch'), BRANCHES, 'Tất cả chi nhánh');
+  }
+  document.getElementById('histFilterBranch').addEventListener('change', function(){
+    const plantSel = document.getElementById('histFilterPlant');
+    const meterSel = document.getElementById('histFilterMeter');
+    if(!this.value){ fillSelect(plantSel, [], 'Tất cả nhà máy'); }
+    else fillSelect(plantSel, plantsOf(this.value), 'Tất cả nhà máy');
+    fillSelect(meterSel, [], 'Tất cả đồng hồ');
+    selectedHistoryIds.clear();
+    renderHistoryTable();
+  });
+  document.getElementById('histFilterPlant').addEventListener('change', function(){
+    const branch = document.getElementById('histFilterBranch').value;
+    const meterSel = document.getElementById('histFilterMeter');
+    const list = metersOf(branch, this.value);
+    meterSel.innerHTML = '<option value="">Tất cả đồng hồ</option>' + list.map(m=>`<option value="${m.id}">${escapeHtml(m.code)}</option>`).join('');
+    selectedHistoryIds.clear();
+    renderHistoryTable();
+  });
+  ['histFilterMeter','histFilterStatus','histFilterFrom','histFilterTo'].forEach(id=>{
+    document.getElementById(id).addEventListener('change', function(){
+      selectedHistoryIds.clear();
+      renderHistoryTable();
+    });
+  });
+  document.getElementById('histFilterClear').addEventListener('click', function(){
+    document.getElementById('histFilterBranch').value='';
+    fillSelect(document.getElementById('histFilterPlant'), [], 'Tất cả nhà máy');
+    fillSelect(document.getElementById('histFilterMeter'), [], 'Tất cả đồng hồ');
+    document.getElementById('histFilterStatus').value='';
+    document.getElementById('histFilterFrom').value='';
+    document.getElementById('histFilterTo').value='';
+    selectedHistoryIds.clear();
+    renderHistoryTable();
+  });
+
+  document.getElementById('histSelectAll').addEventListener('change', function(){
+    const rows = filteredReadings();
+    if(this.checked){ rows.forEach(r=>selectedHistoryIds.add(r.id)); }
+    else{ rows.forEach(r=>selectedHistoryIds.delete(r.id)); }
+    renderHistoryTable();
+  });
+
+  document.getElementById('histBulkDeleteBtn').addEventListener('click', function(){
+    if(selectedHistoryIds.size===0) return;
+    if(!confirm(`Xóa ${selectedHistoryIds.size} bản ghi đã chọn?`)) return;
+    state.readings = state.readings.filter(r=>!selectedHistoryIds.has(r.id));
+    selectedHistoryIds.clear();
+    saveState(state);
+    autoUpdateDailyStatus();
+    renderHistoryTable(); renderStats(); renderRecentList(); renderMeterTable(); renderMeterFilterSelects();
+    toast('🗑️ Đã xóa các bản ghi đã chọn.');
+  });
+
+  function updateBulkDeleteUI(){
+    const btn = document.getElementById('histBulkDeleteBtn');
+    document.getElementById('histSelectedCount').textContent = selectedHistoryIds.size;
+    btn.disabled = selectedHistoryIds.size === 0;
+  }
+
+  function filteredReadings(){
+    const branch = document.getElementById('histFilterBranch').value;
+    const plant = document.getElementById('histFilterPlant').value;
+    const meterId = document.getElementById('histFilterMeter').value;
+    const status = document.getElementById('histFilterStatus').value;
+    const from = document.getElementById('histFilterFrom').value;
+    const to = document.getElementById('histFilterTo').value;
+
+    return state.readings.filter(r=>{
+      const m = meterById(r.meterId);
+      if(!m) return false;
+      if(branch && m.branch!==branch) return false;
+      if(plant && m.plant!==plant) return false;
+      if(meterId && r.meterId!==meterId) return false;
+      if(status && m.status!==status) return false;
+      if(from && r.date < from) return false;
+      if(to && r.date > to) return false;
+      return true;
+    }).sort((a,b)=> b.date.localeCompare(a.date));
+  }
+
+  function renderHistoryTable(){
+    const rows = filteredReadings();
+    const tbody = document.getElementById('historyTableBody');
+    document.getElementById('histEmptyState').classList.toggle('hidden', rows.length>0);
+    document.getElementById('histCount').textContent = `Hiển thị ${rows.length} bản ghi.`;
+
+    tbody.innerHTML = rows.map(r=>{
+      const m = meterById(r.meterId);
+      if(!m) return '';
+      const prev = latestReadingBefore(r.meterId, r.date);
+      let trendHtml = '<span class="text-slate-300 text-xs">—</span>';
+      if(prev){
+        const pct = prev.volume === 0 ? (r.volume>0?100:0) : ((r.volume-prev.volume)/prev.volume)*100;
+        if(r.volume > prev.volume){
+          const isWarn = pct >= WARN_THRESHOLD;
+          trendHtml = `<span class="inline-flex items-center gap-1 text-xs font-bold ${isWarn?'text-red-600':'text-rose-600'}">${isWarn?'⚠️':'🔺'} +${pct.toFixed(1)}%</span>`;
+        }else{
+          trendHtml = `<span class="inline-flex items-center gap-1 text-xs font-bold text-emerald-600">🔻 ${pct===0?'0':pct.toFixed(1)}%</span>`;
+        }
+      }
+      const checked = selectedHistoryIds.has(r.id) ? 'checked' : '';
+      return `<tr class="${statusColorClass(m.status)} transition">
+        <td class="px-3 py-2.5"><input type="checkbox" class="hist-row-checkbox" data-id="${r.id}" ${checked}></td>
+        <td class="px-3 py-2.5 whitespace-nowrap font-medium">${fmtDate(r.date)}</td>
+        <td class="px-3 py-2.5 whitespace-nowrap">${escapeHtml(m.branch)}</td>
+        <td class="px-3 py-2.5 whitespace-nowrap">${escapeHtml(m.plant)}</td>
+        <td class="px-3 py-2.5">${escapeHtml(m.area)}</td>
+        <td class="px-3 py-2.5">${escapeHtml(m.location)}</td>
+        <td class="px-3 py-2.5 font-mono-num font-semibold whitespace-nowrap">${escapeHtml(m.code)}</td>
+        <td class="px-3 py-2.5 text-right font-mono-num">${fmtNum(r.index)}</td>
+        <td class="px-3 py-2.5 text-right font-mono-num font-semibold">${fmtNum(r.volume)}</td>
+        <td class="px-3 py-2.5 text-center">${trendHtml}</td>
+        <td class="px-3 py-2.5 text-slate-500 text-xs max-w-[140px] truncate" title="${escapeHtml(r.note)}">${escapeHtml(r.note)||'—'}</td>
+        <td class="px-3 py-2.5 text-center">
+          <button class="text-red-500 hover:underline text-xs font-semibold del-reading-btn" data-id="${r.id}">Xóa</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    document.querySelectorAll('.hist-row-checkbox').forEach(cb=>{
+      cb.addEventListener('change', function(){
+        if(this.checked) selectedHistoryIds.add(this.dataset.id);
+        else selectedHistoryIds.delete(this.dataset.id);
+        updateBulkDeleteUI();
+        const allChecked = rows.length>0 && rows.every(r=>selectedHistoryIds.has(r.id));
+        document.getElementById('histSelectAll').checked = allChecked;
+      });
+    });
+
+    const allChecked = rows.length>0 && rows.every(r=>selectedHistoryIds.has(r.id));
+    document.getElementById('histSelectAll').checked = allChecked;
+    updateBulkDeleteUI();
+
+    document.querySelectorAll('.del-reading-btn').forEach(btn=>{
+      btn.addEventListener('click', function(){
+        if(!confirm('Xoá bản ghi này?')) return;
+        state.readings = state.readings.filter(r=>r.id!==btn.dataset.id);
+        selectedHistoryIds.delete(btn.dataset.id);
+        saveState(state);
+        autoUpdateDailyStatus();
+        renderHistoryTable(); renderStats(); renderRecentList(); renderMeterTable(); renderMeterFilterSelects();
+        toast('🗑️ Đã xoá bản ghi.');
+      });
+    });
+  }
+
+  function renderStats(){
+    document.getElementById('statTotalMeters').textContent = state.meters.length;
+    document.getElementById('statGreen').textContent = state.meters.filter(m=>m.status==='Cập nhật hàng ngày').length;
+    document.getElementById('statAmber').textContent = state.meters.filter(m=>m.status==='Không cập nhật hàng ngày').length;
+    document.getElementById('statRed').textContent = state.meters.filter(m=>m.status==='Ngưng sử dụng'||m.status==='Không có thông tin'||m.status==='Thiếu thông tin tiêu thụ').length;
+  }
+
+  function refreshAllDependentSelects(){
+    // reset entry form dropdowns to avoid stale references
+    document.getElementById('entryBranch').dispatchEvent(new Event('change'));
+    renderMeterFilterSelects();
+    renderHistoryFilters();
+    renderRecentList();
+    renderStats();
+    renderAnalysisFilters();
+    renderAnalysisTable();
+  }
+
+  // ---------- PHÂN TÍCH & SO SÁNH ----------
+
+  // Lấy danh sách khu vực (không trùng, không rỗng) theo chi nhánh; nếu branch rỗng -> lấy toàn bộ
+  function areasOf(branch){
+    return [...new Set(
+      state.meters.filter(m => (!branch || m.branch === branch) && m.area)
+                  .map(m => m.area)
+    )].sort((a,b)=> a.localeCompare(b,'vi'));
+  }
+
+  // Lấy danh sách đồng hồ theo chi nhánh + khu vực (bỏ qua điều kiện nếu rỗng)
+  function metersOfBranchArea(branch, area){
+    return state.meters.filter(m => (!branch || m.branch === branch) && (!area || m.area === area));
+  }
+
+  // Điền select đồng hồ dạng "Mã ĐH · Khu vực · Vị trí"
+  function fillMeterSelectAna(sel, list, placeholder){
+    sel.innerHTML = `<option value="">${placeholder}</option>` +
+      list.map(m => `<option value="${m.id}">${escapeHtml(m.code)} · ${escapeHtml(m.area || '—')} · ${escapeHtml(m.location)}</option>`).join('');
+  }
+
+  // ISO week number (Thứ 2 - Chủ nhật) cho một ngày bất kỳ -> {isoYear, isoWeek}
+  function getISOWeek(date){
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+    return { isoYear: d.getUTCFullYear(), isoWeek: weekNo };
+  }
+
+  // Chuyển giá trị input type="week" (VD: "2026-W27") thành khoảng ngày {start, end}
+  function isoWeekToRange(weekStr){
+    if(!weekStr) return null;
+    const m = String(weekStr).match(/^(\d{4})-W(\d{2})$/);
+    if(!m) return null;
+    const year = parseInt(m[1],10), week = parseInt(m[2],10);
+    const simple = new Date(Date.UTC(year,0,4));
+    const dow = simple.getUTCDay() || 7;
+    const monday = new Date(simple);
+    monday.setUTCDate(simple.getUTCDate() - dow + 1 + (week-1)*7);
+    const sunday = new Date(monday);
+    sunday.setUTCDate(monday.getUTCDate()+6);
+    const fmt = d => d.toISOString().slice(0,10);
+    return { start: fmt(monday), end: fmt(sunday) };
+  }
+
+  // Chuyển giá trị input type="month" (VD: "2026-07") thành khoảng ngày {start, end}
+  function monthToRange(value){
+    if(!value) return null;
+    const m = String(value).match(/^(\d{4})-(\d{2})$/);
+    if(!m) return null;
+    const y = parseInt(m[1],10), mo = parseInt(m[2],10);
+    if(mo < 1 || mo > 12) return null;
+    const lastDay = new Date(y, mo, 0).getDate();
+    return { start: `${value}-01`, end: `${value}-${String(lastDay).padStart(2,'0')}` };
+  }
+
+  // Chuyển giá trị năm (VD: "2026") thành khoảng ngày {start, end}
+  function yearToRange(value){
+    if(!value) return null;
+    const y = parseInt(value,10);
+    if(isNaN(y) || y < 1900 || y > 3000) return null;
+    return { start: `${y}-01-01`, end: `${y}-12-31` };
+  }
+
+  function dayToRange(value){
+    if(!value) return null;
+    return { start: value, end: value };
+  }
+
+  // Tính khoảng ngày {start, end} tương ứng với kiểu so sánh đã chọn
+  function getPeriodRange(type, value){
+    switch(type){
+      case 'day': return dayToRange(value);
+      case 'week': return isoWeekToRange(value);
+      case 'month': return monthToRange(value);
+      case 'year': return yearToRange(value);
+      default: return null;
+    }
+  }
+
+  // Tổng khối lượng tiêu thụ của 1 đồng hồ trong khoảng ngày [range.start, range.end]
+  function volumeInRange(meterId, range){
+    if(!range) return 0;
+    return state.readings
+      .filter(r => r.meterId === meterId && r.date >= range.start && r.date <= range.end)
+      .reduce((acc, r) => acc + ((typeof r.volume === 'number' && !isNaN(r.volume)) ? r.volume : 0), 0);
+  }
+
+  function hasDataInRange(meterId, range){
+    if(!range) return false;
+    return state.readings.some(r => r.meterId === meterId && r.date >= range.start && r.date <= range.end);
+  }
+
+  // Thiết lập lại loại input (date/week/month/number) + giá trị mặc định khi đổi "Kiểu so sánh"
+  function setDefaultAnaPeriods(type){
+    const thisInput = document.getElementById('anaThisPeriod');
+    const prevInput = document.getElementById('anaPrevPeriod');
+    const now = new Date();
+    const pad = n => String(n).padStart(2,'0');
+
+    if(type === 'day'){
+      thisInput.type = 'date'; prevInput.type = 'date';
+      thisInput.removeAttribute('min'); thisInput.removeAttribute('max');
+      prevInput.removeAttribute('min'); prevInput.removeAttribute('max');
+      const yest = new Date(now); yest.setDate(yest.getDate()-1);
+      thisInput.value = todayStr();
+      prevInput.value = yest.toISOString().slice(0,10);
+    }else if(type === 'week'){
+      thisInput.type = 'week'; prevInput.type = 'week';
+      thisInput.removeAttribute('min'); thisInput.removeAttribute('max');
+      prevInput.removeAttribute('min'); prevInput.removeAttribute('max');
+      const {isoYear, isoWeek} = getISOWeek(now);
+      thisInput.value = `${isoYear}-W${pad(isoWeek)}`;
+      const prevWeekDate = new Date(now); prevWeekDate.setDate(prevWeekDate.getDate()-7);
+      const {isoYear:py, isoWeek:pw} = getISOWeek(prevWeekDate);
+      prevInput.value = `${py}-W${pad(pw)}`;
+    }else if(type === 'month'){
+      thisInput.type = 'month'; prevInput.type = 'month';
+      thisInput.removeAttribute('min'); thisInput.removeAttribute('max');
+      prevInput.removeAttribute('min'); prevInput.removeAttribute('max');
+      thisInput.value = `${now.getFullYear()}-${pad(now.getMonth()+1)}`;
+      const pm = new Date(now.getFullYear(), now.getMonth()-1, 1);
+      prevInput.value = `${pm.getFullYear()}-${pad(pm.getMonth()+1)}`;
+    }else if(type === 'year'){
+      thisInput.type = 'number'; prevInput.type = 'number';
+      thisInput.min = 2000; thisInput.max = 2100;
+      prevInput.min = 2000; prevInput.max = 2100;
+      thisInput.value = now.getFullYear();
+      prevInput.value = now.getFullYear() - 1;
+    }
+  }
+
+  function renderAnalysisFilters(){
+    const branchSel = document.getElementById('anaFilterBranch');
+    const areaSel = document.getElementById('anaFilterArea');
+    const meterSel = document.getElementById('anaFilterMeter');
+    const prevBranch = branchSel.value, prevArea = areaSel.value, prevMeter = meterSel.value;
+
+    fillSelect(branchSel, BRANCHES, 'Tất cả chi nhánh');
+    fillSelect(areaSel, areasOf(prevBranch), 'Tất cả khu vực');
+    fillMeterSelectAna(meterSel, metersOfBranchArea(prevBranch, prevArea), 'Tất cả đồng hồ');
+
+    // Cố gắng giữ lại lựa chọn cũ nếu vẫn còn hợp lệ
+    if([...branchSel.options].some(o=>o.value===prevBranch)) branchSel.value = prevBranch;
+    if([...areaSel.options].some(o=>o.value===prevArea)) areaSel.value = prevArea;
+    if([...meterSel.options].some(o=>o.value===prevMeter)) meterSel.value = prevMeter;
+
+    if(!document.getElementById('anaThisPeriod').value || !document.getElementById('anaPrevPeriod').value){
+      setDefaultAnaPeriods(document.getElementById('anaCompareType').value);
+    }
+  }
+
+  document.getElementById('anaFilterBranch').addEventListener('change', function(){
+    const branch = this.value;
+    fillSelect(document.getElementById('anaFilterArea'), areasOf(branch), 'Tất cả khu vực');
+    fillMeterSelectAna(document.getElementById('anaFilterMeter'), metersOfBranchArea(branch, ''), 'Tất cả đồng hồ');
+    renderAnalysisTable();
+  });
+  document.getElementById('anaFilterArea').addEventListener('change', function(){
+    const branch = document.getElementById('anaFilterBranch').value;
+    fillMeterSelectAna(document.getElementById('anaFilterMeter'), metersOfBranchArea(branch, this.value), 'Tất cả đồng hồ');
+    renderAnalysisTable();
+  });
+  document.getElementById('anaFilterMeter').addEventListener('change', renderAnalysisTable);
+  document.getElementById('anaCompareType').addEventListener('change', function(){
+    setDefaultAnaPeriods(this.value);
+    renderAnalysisTable();
+  });
+  document.getElementById('anaThisPeriod').addEventListener('change', renderAnalysisTable);
+  document.getElementById('anaPrevPeriod').addEventListener('change', renderAnalysisTable);
+
+  function renderAnalysisTable(){
+    const branch = document.getElementById('anaFilterBranch').value;
+    const area = document.getElementById('anaFilterArea').value;
+    const meterId = document.getElementById('anaFilterMeter').value;
+    const compareType = document.getElementById('anaCompareType').value;
+    const thisVal = document.getElementById('anaThisPeriod').value;
+    const prevVal = document.getElementById('anaPrevPeriod').value;
+
+    const tbody = document.getElementById('anaTableBody');
+    const emptyEl = document.getElementById('anaEmptyState');
+    const countEl = document.getElementById('anaCount');
+    const kpiUpEl = document.getElementById('anaKpiUp');
+    const kpiDownEl = document.getElementById('anaKpiDown');
+
+    const thisRange = getPeriodRange(compareType, thisVal);
+    const prevRange = getPeriodRange(compareType, prevVal);
+
+    if(!thisRange || !prevRange){
+      tbody.innerHTML = '';
+      emptyEl.textContent = 'Vui lòng chọn đầy đủ mốc thời gian "Kỳ này" và "Kỳ trước".';
+      emptyEl.classList.remove('hidden');
+      countEl.textContent = '';
+      kpiUpEl.textContent = 'Không có dữ liệu phù hợp.';
+      kpiDownEl.textContent = 'Không có dữ liệu phù hợp.';
+      return;
+    }
+
+    const meters = state.meters.filter(m =>
+      (!branch || m.branch === branch) &&
+      (!area || m.area === area) &&
+      (!meterId || m.id === meterId)
+    );
+
+    const rows = [];
+    meters.forEach(m => {
+      const hasCur = hasDataInRange(m.id, thisRange);
+      const hasPrev = hasDataInRange(m.id, prevRange);
+      if(!hasCur && !hasPrev) return; // Bỏ qua đồng hồ không có dữ liệu ở cả 2 kỳ
+
+      const curVol = volumeInRange(m.id, thisRange);
+      const prevVol = volumeInRange(m.id, prevRange);
+      const diff = curVol - prevVol;
+      let pct;
+      if(!prevVol){ // prevVol === 0 hoặc null/undefined -> tránh chia cho 0
+        pct = curVol > 0 ? 100 : 0;
+      }else{
+        pct = (diff / prevVol) * 100;
+      }
+      rows.push({ meter: m, prevVol, curVol, diff, pct });
+    });
+
+    // Sắp xếp theo mức chênh lệch tuyệt đối giảm dần (tăng nhiều nhất lên đầu)
+    rows.sort((a,b) => b.diff - a.diff);
+
+    // KPI: đồng hồ tăng nhiều nhất & giảm (hoặc ít thay đổi) nhiều nhất
+    let kpiUp = null, kpiDown = null;
+    rows.forEach(r => {
+      if(r.diff > 0 && (!kpiUp || r.diff > kpiUp.diff)) kpiUp = r;
+      if(r.diff < 0 && (!kpiDown || r.diff < kpiDown.diff)) kpiDown = r;
+    });
+    if(!kpiDown && rows.length){
+      // Không có đồng hồ nào giảm -> lấy đồng hồ có mức thay đổi thấp nhất (ít thay đổi nhất)
+      kpiDown = rows.reduce((min, r) => (r.diff < min.diff ? r : min), rows[0]);
+    }
+
+    function kpiCardHtml(r, isUp){
+      if(!r) return 'Không có dữ liệu phù hợp.';
+      const colorText = isUp ? 'text-rose-700' : 'text-emerald-700';
+      const colorSub = isUp ? 'text-rose-600' : 'text-emerald-600';
+      const sign = r.diff > 0 ? '+' : '';
+      const pctSign = r.pct > 0 ? '+' : '';
+      const locLabel = escapeHtml(r.meter.area || r.meter.location || '—');
+      return `
+        <p class="text-lg font-extrabold ${colorText}">${escapeHtml(r.meter.code)}</p>
+        <p class="text-xs text-slate-500 mb-1">${escapeHtml(r.meter.branch)} · ${locLabel}</p>
+        <p class="text-sm font-bold ${colorSub}">${sign}${fmtNum(r.diff)} m³ &nbsp;(${pctSign}${isFinite(r.pct)?r.pct.toFixed(1):'0.0'}%)</p>
+        <p class="text-[11px] text-slate-400 mt-1">${fmtNum(r.prevVol)} m³ → ${fmtNum(r.curVol)} m³</p>
+      `;
+    }
+    kpiUpEl.innerHTML = kpiCardHtml(kpiUp, true);
+    kpiDownEl.innerHTML = kpiCardHtml(kpiDown, false);
+
+    emptyEl.classList.toggle('hidden', rows.length > 0);
+    countEl.textContent = rows.length ? `Hiển thị ${rows.length} đồng hồ có dữ liệu trong khoảng thời gian đã chọn.` : '';
+
+    tbody.innerHTML = rows.map(r => {
+      const warn = Math.abs(r.pct) >= WARN_THRESHOLD;
+      const rowClass = warn ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-slate-50';
+      let trendIcon, trendColor;
+      if(r.diff > 0){ trendIcon = '🔺'; trendColor = 'text-red-600'; }
+      else if(r.diff < 0){ trendIcon = '🔻'; trendColor = 'text-emerald-600'; }
+      else{ trendIcon = '➖'; trendColor = 'text-slate-400'; }
+      const pctDisplay = isFinite(r.pct) ? r.pct.toFixed(1) : '0.0';
+      const pctSign = r.pct > 0 ? '+' : '';
+      const diffSign = r.diff > 0 ? '+' : '';
+
+      return `<tr class="${rowClass} transition">
+        <td class="px-3 py-2.5 font-mono-num font-semibold whitespace-nowrap">${escapeHtml(r.meter.code)}</td>
+        <td class="px-3 py-2.5 whitespace-nowrap">${escapeHtml(r.meter.branch)}</td>
+        <td class="px-3 py-2.5">${escapeHtml(r.meter.area || '—')} <span class="text-slate-400">/ ${escapeHtml(r.meter.location)}</span></td>
+        <td class="px-3 py-2.5 text-right font-mono-num">${fmtNum(r.prevVol)}</td>
+        <td class="px-3 py-2.5 text-right font-mono-num font-semibold">${fmtNum(r.curVol)}</td>
+        <td class="px-3 py-2.5 text-right font-mono-num font-semibold ${trendColor}">${diffSign}${fmtNum(r.diff)}</td>
+        <td class="px-3 py-2.5 text-center">
+          <span class="inline-flex items-center gap-1 text-xs font-bold ${trendColor}">${trendIcon} ${pctSign}${pctDisplay}%${warn ? ' ⚠️' : ''}</span>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ---------- BACKUP: EXPORT / IMPORT ----------
+  function download(filename, content, mime){
+    const blob = new Blob([content], {type: mime});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  document.getElementById('exportJsonBtn').addEventListener('click', function(){
+    const payload = {...state, exportedAt: new Date().toISOString(), version:1};
+    download(`sao-luu-dong-ho-nuoc_${todayStr()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+    toast('⬇️ Đã xuất file JSON.');
+  });
+
+  document.getElementById('exportCsvBtn').addEventListener('click', function(){
+    const header = ['Ngày cập nhật','Chi nhánh','Nhà máy nước','Cấp cho khu vực','Vị trí','ID đồng hồ','Loại đồng hồ','Đường kính','Chỉ số','Khối lượng tiêu thụ','% thay đổi','Trạng thái','Ghi chú'];
+    const rows = [...state.readings].sort((a,b)=>a.date.localeCompare(b.date)).map(r=>{
+      const m = meterById(r.meterId);
+      if(!m) return null;
+      const prev = latestReadingBefore(r.meterId, r.date);
+      let pctStr = '';
+      if(prev){
+        const pct = prev.volume===0 ? (r.volume>0?100:0) : ((r.volume-prev.volume)/prev.volume)*100;
+        pctStr = (pct>=0?'+':'') + pct.toFixed(1) + '%';
+      }
+      return [fmtDate(r.date), m.branch, m.plant, m.area, m.location, m.code, m.type, m.diameter, r.index, r.volume, pctStr, m.status, r.note];
+    }).filter(Boolean);
+
+    const csvEscape = v => `"${String(v??'').replace(/"/g,'""')}"`;
+    const csv = "\uFEFF" + [header, ...rows].map(row=>row.map(csvEscape).join(',')).join('\r\n');
+    download(`lich-su-dong-ho-nuoc_${todayStr()}.csv`, csv, 'text/csv;charset=utf-8');
+    toast('⬇️ Đã xuất file CSV.');
+  });
+
+  document.getElementById('importJsonInput').addEventListener('change', function(e){
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = function(ev){
+      try{
+        const data = JSON.parse(ev.target.result);
+        if(!data || !Array.isArray(data.meters) || !Array.isArray(data.readings)){
+          toast('File không đúng định dạng backup.', 'err'); return;
+        }
+        if(!confirm(`File có ${data.meters.length} đồng hồ và ${data.readings.length} bản ghi. Việc nhập sẽ GHI ĐÈ toàn bộ dữ liệu hiện tại. Tiếp tục?`)) return;
+        state = {meters: data.meters, readings: data.readings};
+        saveState(state);
+        toast('✅ Đã khôi phục dữ liệu thành công.');
+        renderAll();
+      }catch(err){
+        toast('Không đọc được file JSON.', 'err');
+      }finally{
+        e.target.value = '';
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  document.getElementById('clearAllBtn').addEventListener('click', function(){
+    if(!confirm('Xoá TOÀN BỘ dữ liệu hiện tại và nạp lại dữ liệu mẫu? Hành động không thể hoàn tác.')) return;
+    state = buildMockData();
+    saveState(state);
+    toast('♻️ Đã đặt lại dữ liệu mẫu.');
+    renderAll();
+  });
+
+  // ---------- INIT ----------
+  function renderAll(){
+    autoUpdateDailyStatus();
+    initEntryBranchSelect();
+    renderMeterFilterSelects();
+    renderHistoryFilters();
+    document.getElementById('entryPlant').disabled = true;
+    document.getElementById('entryPlant').innerHTML = '<option value="">— Chọn chi nhánh trước —</option>';
+    document.getElementById('entryMeter').disabled = true;
+    document.getElementById('entryMeter').innerHTML = '<option value="">— Chọn nhà máy trước —</option>';
+    hideRefCard();
+    renderRecentList();
+    renderMeterTable();
+    renderHistoryTable();
+    renderStats();
+    renderAnalysisFilters();
+    renderAnalysisTable();
+  }
+
+  // Lưu ý: renderAll() được gọi trong auth.onAuthStateChanged() sau khi đăng nhập thành công,
+  // không tự chạy ở đây để tránh lộ dữ liệu khi chưa xác thực.
+
+  // ---------- ĐẨY DỮ LIỆU CŨ (LOCALSTORAGE) LÊN FIREBASE ----------
+  document.getElementById('pushLocalToCloudBtn').addEventListener('click', function(){
+    if(!currentUser){ toast('Bạn cần đăng nhập trước.', 'err'); return; }
+    const statusEl = document.getElementById('backupSyncStatus');
+    const msg = `Sẽ đẩy ${state.meters.length} đồng hồ và ${state.readings.length} bản ghi hiện có trên máy này lên Firebase, GHI ĐÈ dữ liệu đang có trên đám mây (nếu có). Tiếp tục?`;
+    if(!confirm(msg)) return;
+    statusEl.textContent = 'Đang đẩy dữ liệu lên Firebase...';
+    pushStateToCloud().then(function(){
+      statusEl.textContent = '✅ Đã đẩy dữ liệu lên Firebase lúc ' + new Date().toLocaleTimeString('vi-VN');
+      toast('✅ Đã đẩy dữ liệu cũ lên Firebase thành công.');
+    });
+  });
+})();
+</script>
+</body>
+</html>
