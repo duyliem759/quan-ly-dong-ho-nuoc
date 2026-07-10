@@ -50,6 +50,10 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<!-- Chart.js (biểu đồ Phân tích & So sánh) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<!-- SheetJS (xuất file Excel .xlsx) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body class="text-slate-800">
 
@@ -203,10 +207,29 @@
       </form>
     </div>
 
-    <!-- Quick recent entries -->
+    <!-- Bảng đồng hồ đã nhập hôm nay -->
     <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
-      <h3 class="font-bold text-slate-800 mb-3 text-sm flex items-center gap-2"><span class="w-1.5 h-4 bg-slate-400 rounded-full"></span>5 lần nhập gần nhất</h3>
-      <div id="recentList" class="space-y-2 text-sm"></div>
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-bold text-slate-800 text-sm flex items-center gap-2"><span class="w-1.5 h-4 bg-slate-400 rounded-full"></span>Bảng đồng hồ đã nhập hôm nay</h3>
+        <span id="todayEntriesCount" class="text-xs text-slate-400"></span>
+      </div>
+      <div class="overflow-x-auto rounded-lg border border-slate-200">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-100 text-slate-500 text-xs uppercase">
+            <tr>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Chi nhánh</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Trạm cấp nước</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Đồng hồ</th>
+              <th class="text-right px-3 py-2.5 whitespace-nowrap">Chỉ số đồng hồ</th>
+              <th class="text-right px-3 py-2.5 whitespace-nowrap">Khối lượng tiêu thụ</th>
+              <th class="text-left px-3 py-2.5 whitespace-nowrap">Ghi chú</th>
+              <th class="px-3 py-2.5 whitespace-nowrap"></th>
+            </tr>
+          </thead>
+          <tbody id="todayEntriesBody" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+      <p id="todayEntriesEmpty" class="hidden text-center text-slate-400 text-sm py-8">Hôm nay chưa có đồng hồ nào được nhập.</p>
     </div>
   </section>
 
@@ -374,6 +397,27 @@
         </div>
       </div>
 
+      <!-- Biểu đồ so sánh khối lượng tiêu thụ -->
+      <div class="rounded-xl border border-slate-200 p-4 mb-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <h3 class="font-bold text-slate-700 text-sm flex items-center gap-2">📊 Biểu đồ so sánh khối lượng tiêu thụ</h3>
+          <div class="flex items-center gap-2">
+            <label class="text-xs font-semibold text-slate-500 whitespace-nowrap">Xem theo:</label>
+            <select id="anaChartGroupBy" class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white">
+              <option value="meter" selected>Từng đồng hồ</option>
+              <option value="branch">Chi nhánh</option>
+              <option value="plant">Trạm cấp nước</option>
+              <option value="area">Khu vực cấp</option>
+            </select>
+          </div>
+        </div>
+        <div class="relative" style="height:320px;">
+          <canvas id="anaCompareChart"></canvas>
+        </div>
+        <p id="anaChartEmpty" class="hidden text-center text-slate-400 text-sm py-8">Không có dữ liệu phù hợp để vẽ biểu đồ.</p>
+        <p class="text-[11px] text-slate-400 mt-2">Biểu đồ hiển thị tối đa 15 mục có chênh lệch (tuyệt đối) lớn nhất trong phạm vi đang lọc, giúp kiểm soát nhanh cá thể/nhóm nào đang tiêu thụ bất thường.</p>
+      </div>
+
       <!-- Bảng chi tiết so sánh -->
       <div class="overflow-x-auto rounded-lg border border-slate-200">
         <table class="w-full text-sm">
@@ -414,12 +458,9 @@
 
       <div class="grid sm:grid-cols-2 gap-4">
         <div class="border border-slate-200 rounded-xl p-4">
-          <h3 class="font-semibold text-sm mb-1">⬇️ Xuất dữ liệu</h3>
-          <p class="text-xs text-slate-400 mb-3">Tải toàn bộ dữ liệu (đồng hồ + lịch sử) về máy.</p>
-          <div class="flex flex-wrap gap-2">
-            <button id="exportJsonBtn" class="bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold px-4 py-2 rounded-lg">Xuất JSON (backup)</button>
-            <button id="exportCsvBtn" class="bg-white border border-teal-700 text-teal-700 hover:bg-teal-50 text-sm font-semibold px-4 py-2 rounded-lg">Xuất CSV (Excel)</button>
-          </div>
+          <h3 class="font-semibold text-sm mb-1">⬇️ Sao lưu JSON</h3>
+          <p class="text-xs text-slate-400 mb-3">Tải toàn bộ dữ liệu (đồng hồ + lịch sử) về máy để dự phòng.</p>
+          <button id="exportJsonBtn" class="bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold px-4 py-2 rounded-lg">Xuất JSON (backup)</button>
         </div>
         <div class="border border-slate-200 rounded-xl p-4">
           <h3 class="font-semibold text-sm mb-1">⬆️ Nhập dữ liệu</h3>
@@ -428,6 +469,21 @@
             Chọn file JSON...
             <input id="importJsonInput" type="file" accept="application/json" class="hidden">
           </label>
+        </div>
+      </div>
+
+      <div class="mt-4 border border-teal-200 bg-teal-50/50 rounded-xl p-4">
+        <h3 class="font-semibold text-sm mb-1">📊 Xuất báo cáo Excel (.xlsx)</h3>
+        <p class="text-xs text-slate-500 mb-3">Chọn khoảng thời gian báo cáo. File Excel sẽ tách riêng mỗi <b>Chi nhánh</b> thành 1 sheet (nhóm theo <b>Nhà máy → Cấp cho khu nào → Vị trí</b>), kèm 1 sheet <b>"Tổng hợp chi tiết"</b> nêu bật những đồng hồ chênh lệch nhiều nhất so với kỳ trước.</p>
+        <div class="flex flex-wrap items-center gap-2">
+          <select id="exportPeriodType" class="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white font-semibold text-teal-700">
+            <option value="day">Theo Ngày</option>
+            <option value="week">Theo Tuần</option>
+            <option value="month" selected>Theo Tháng</option>
+            <option value="year">Theo Năm</option>
+          </select>
+          <input id="exportPeriodValue" type="month" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+          <button id="exportExcelBtn" class="bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold px-4 py-2 rounded-lg">⬇️ Xuất file Excel</button>
         </div>
       </div>
 
@@ -571,6 +627,9 @@
   let cloudReady = false;       // đã đăng nhập + đã gắn listener xong
   let cloudDocExists = false;   // Firestore đã có dữ liệu chưa
   let unsubscribeSnapshot = null;
+  let hasLoadedOnce = false;    // đã nhận dữ liệu lần đầu cho phiên/thiết bị này chưa
+                                 // (lần đầu = an toàn để nạp toàn bộ vì chưa có gì đang nhập dở;
+                                 //  các lần sau chỉ cập nhật ngầm, không đụng vào form đang nhập)
 
   function setSyncBadge(text, colorClass){
     const el = document.getElementById('syncBadge');
@@ -604,6 +663,7 @@
       if(!doc.exists){
         setSyncBadge('☁️ Chưa có dữ liệu trên đám mây', 'text-amber-200');
         cloudReady = true;
+        hasLoadedOnce = true;
         return;
       }
       // Bỏ qua "echo" của chính lần ghi cục bộ (đã cập nhật UI rồi)
@@ -617,11 +677,19 @@
       if(incoming !== currentJson){
         state = {meters: data.meters||[], readings: data.readings||[]};
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        if(cloudReady) toast('🔄 Dữ liệu vừa được cập nhật từ thiết bị/người dùng khác.');
-        renderAll();
+        if(!hasLoadedOnce){
+          // Lần nạp dữ liệu đầu tiên trên thiết bị/phiên này (vd: vừa đăng nhập trên máy chưa từng
+          // đăng nhập) -> form nhập chỉ số đang trống, an toàn để nạp toàn bộ giao diện.
+          renderAll();
+        }else{
+          // Đồng bộ nền trong lúc đang thao tác: KHÔNG hiển thị cảnh báo và KHÔNG làm mới
+          // form nhập chỉ số (tránh mất dữ liệu đang nhập dở). Chỉ âm thầm cập nhật các bảng khác.
+          renderAllQuiet();
+        }
       }
       setSyncBadge('🟢 Đã đồng bộ', 'text-emerald-200');
       cloudReady = true;
+      hasLoadedOnce = true;
     }, function(err){
       console.error('Lỗi lắng nghe Firestore:', err);
       setSyncBadge('🔴 Mất kết nối đồng bộ', 'text-red-200');
@@ -642,6 +710,7 @@
       renderAll();
     }else{
       cloudReady = false;
+      hasLoadedOnce = false;
       if(unsubscribeSnapshot){ unsubscribeSnapshot(); unsubscribeSnapshot = null; }
       appRoot.classList.add('hidden');
       authOverlay.classList.remove('hidden');
@@ -967,19 +1036,27 @@
     }
     if(dup){ state.readings = state.readings.filter(r=>r.id!==dup.id); }
 
+    // Trạng thái đồng hồ NGAY TRƯỚC khi lưu — đúng như đang hiển thị ở thẻ tham chiếu trên form —
+    // dùng để quyết định có được phép làm mới lại form sau khi lưu hay không.
+    const isDailyMeter = meter && meter.status === 'Cập nhật hàng ngày';
+
     state.readings.push({id:uid(), meterId, date, index, volume, note});
     saveState(state);
     autoUpdateDailyStatus();
     toast('✅ Đã lưu chỉ số thành công.');
-    renderRecentList();
+    renderTodayEnteredTable();
     renderMeterTable();
     renderMeterFilterSelects();
-    // giữ nguyên lựa chọn đồng hồ để tiện nhập tiếp, refresh reference
-    showRefCard(meterId);
-    document.getElementById('entryIndex').value='';
-    document.getElementById('entryVolume').value='';
-    document.getElementById('entryNote').value='';
-    document.getElementById('comparePreview').classList.add('hidden');
+
+    if(isDailyMeter){
+      // Đồng hồ đang ở trạng thái "Cập nhật hàng ngày" -> được phép làm mới lại toàn bộ form
+      // để tiện nhập sang đồng hồ tiếp theo.
+      document.getElementById('entryResetBtn').click();
+    }else{
+      // Mặc định: giữ nguyên toàn bộ nội dung đã nhập/chọn trên form (không xoá trắng),
+      // chỉ cập nhật lại thẻ tham chiếu để phản ánh dữ liệu vừa lưu.
+      showRefCard(meterId);
+    }
   });
 
   document.getElementById('entryResetBtn').addEventListener('click', function(){
@@ -992,41 +1069,44 @@
     hideRefCard();
   });
 
-  function renderRecentList(){
-    const wrap = document.getElementById('recentList');
-    const rows = [...state.readings].sort((a,b)=> b.date.localeCompare(a.date)).slice(0,5);
-    if(!rows.length){ wrap.innerHTML = '<p class="text-slate-400 text-sm">Chưa có dữ liệu.</p>'; return; }
-    wrap.innerHTML = rows.map(r=>{
-      const m = meterById(r.meterId);
-      if(!m) return '';
-      const prev = latestReadingBefore(r.meterId, r.date);
-      let trend = '';
-      if(prev){
-        const pct = prev.volume === 0 ? (r.volume>0?100:0) : ((r.volume-prev.volume)/prev.volume)*100;
-        trend = r.volume > prev.volume
-          ? `<span class="text-red-600 font-semibold text-xs">🔺 +${pct.toFixed(1)}%</span>`
-          : `<span class="text-emerald-600 font-semibold text-xs">🔻 ${pct.toFixed(1)}%</span>`;
-      }
-      return `<div class="flex items-center justify-between gap-2 border border-slate-100 rounded-lg px-3 py-2">
-        <div class="min-w-0">
-          <p class="font-semibold text-slate-700 truncate">${escapeHtml(m.code)} <span class="text-slate-400 font-normal">· ${escapeHtml(m.plant)}</span></p>
-          <p class="text-xs text-slate-400">${fmtDate(r.date)} · Chỉ số ${fmtNum(r.index)} · KL ${fmtNum(r.volume)} m³</p>
-        </div>
-        <div class="flex items-center gap-3 shrink-0">
-          ${trend}
-          <button class="text-red-500 hover:underline text-xs font-semibold del-recent-btn" data-id="${r.id}">Xoá</button>
-        </div>
-      </div>`;
-    }).join('');
+  function renderTodayEnteredTable(){
+    const tbody = document.getElementById('todayEntriesBody');
+    const emptyEl = document.getElementById('todayEntriesEmpty');
+    const countEl = document.getElementById('todayEntriesCount');
+    const today = todayStr();
+    const rows = state.readings.filter(r=>r.date===today)
+      .map(r=>({reading:r, meter:meterById(r.meterId)}))
+      .filter(x=>x.meter)
+      .sort((a,b)=> a.meter.branch.localeCompare(b.meter.branch,'vi') || a.meter.plant.localeCompare(b.meter.plant,'vi') || a.meter.code.localeCompare(b.meter.code,'vi'));
 
-    document.querySelectorAll('.del-recent-btn').forEach(btn=>{
+    emptyEl.classList.toggle('hidden', rows.length>0);
+    countEl.textContent = rows.length ? `${rows.length} đồng hồ đã nhập hôm nay` : '';
+
+    tbody.innerHTML = rows.map(({reading:r, meter:m})=>`
+      <tr class="hover:bg-slate-50 transition">
+        <td class="px-3 py-2.5 whitespace-nowrap">${escapeHtml(m.branch)}</td>
+        <td class="px-3 py-2.5 whitespace-nowrap">${escapeHtml(m.plant)}</td>
+        <td class="px-3 py-2.5">
+          <span class="font-mono-num font-semibold">${escapeHtml(m.code)}</span>
+          <span class="text-slate-400"> · ${escapeHtml(m.area)||'—'} · ${escapeHtml(m.location)}</span>
+        </td>
+        <td class="px-3 py-2.5 text-right font-mono-num font-semibold">${fmtNum(r.index)}</td>
+        <td class="px-3 py-2.5 text-right font-mono-num font-semibold">${fmtNum(r.volume)} m³</td>
+        <td class="px-3 py-2.5 text-slate-500 text-xs max-w-[160px] truncate" title="${escapeHtml(r.note)}">${escapeHtml(r.note)||'—'}</td>
+        <td class="px-3 py-2.5 text-center whitespace-nowrap">
+          <button class="text-red-500 hover:underline text-xs font-semibold del-today-btn" data-id="${r.id}">Xoá</button>
+        </td>
+      </tr>
+    `).join('');
+
+    document.querySelectorAll('.del-today-btn').forEach(btn=>{
       btn.addEventListener('click', function(){
         if(!confirm('Xoá bản ghi này?')) return;
         state.readings = state.readings.filter(r=>r.id!==btn.dataset.id);
         selectedHistoryIds.delete(btn.dataset.id);
         saveState(state);
         autoUpdateDailyStatus();
-        renderRecentList(); renderHistoryTable(); renderStats(); renderMeterTable(); renderMeterFilterSelects();
+        renderTodayEnteredTable(); renderHistoryTable(); renderStats(); renderMeterTable(); renderMeterFilterSelects();
         toast('🗑️ Đã xoá bản ghi.');
       });
     });
@@ -1292,7 +1372,7 @@
     selectedHistoryIds.clear();
     saveState(state);
     autoUpdateDailyStatus();
-    renderHistoryTable(); renderStats(); renderRecentList(); renderMeterTable(); renderMeterFilterSelects();
+    renderHistoryTable(); renderStats(); renderTodayEnteredTable(); renderMeterTable(); renderMeterFilterSelects();
     toast('🗑️ Đã xóa các bản ghi đã chọn.');
   });
 
@@ -1383,7 +1463,7 @@
         selectedHistoryIds.delete(btn.dataset.id);
         saveState(state);
         autoUpdateDailyStatus();
-        renderHistoryTable(); renderStats(); renderRecentList(); renderMeterTable(); renderMeterFilterSelects();
+        renderHistoryTable(); renderStats(); renderTodayEnteredTable(); renderMeterTable(); renderMeterFilterSelects();
         toast('🗑️ Đã xoá bản ghi.');
       });
     });
@@ -1401,7 +1481,7 @@
     document.getElementById('entryBranch').dispatchEvent(new Event('change'));
     renderMeterFilterSelects();
     renderHistoryFilters();
-    renderRecentList();
+    renderTodayEnteredTable();
     renderStats();
     renderAnalysisFilters();
     renderAnalysisTable();
@@ -1604,6 +1684,7 @@
       countEl.textContent = '';
       kpiUpEl.textContent = 'Không có dữ liệu phù hợp.';
       kpiDownEl.textContent = 'Không có dữ liệu phù hợp.';
+      renderAnalysisChart([]);
       return;
     }
 
@@ -1688,7 +1769,88 @@
         </td>
       </tr>`;
     }).join('');
+
+    renderAnalysisChart(rows);
   }
+
+  // ---------- BIỂU ĐỒ SO SÁNH (Chart.js) ----------
+  let anaChart = null;
+  const CHART_COLORS = ['#0e7490','#f97316','#0f766e','#e11d48','#7c3aed','#0284c7','#65a30d','#db2777','#ea580c','#4338ca'];
+
+  function groupLabelOf(meter, groupBy){
+    if(groupBy === 'branch') return meter.branch;
+    if(groupBy === 'plant') return meter.plant;
+    if(groupBy === 'area') return meter.area || '(Không có khu vực)';
+    return `${meter.code} · ${meter.area||meter.location||''}`;
+  }
+
+  function renderAnalysisChart(rows){
+    const canvas = document.getElementById('anaCompareChart');
+    const emptyEl = document.getElementById('anaChartEmpty');
+    const groupBy = document.getElementById('anaChartGroupBy').value;
+
+    if(!rows.length){
+      emptyEl.classList.remove('hidden');
+      canvas.classList.add('hidden');
+      if(anaChart){ anaChart.destroy(); anaChart = null; }
+      return;
+    }
+    emptyEl.classList.add('hidden');
+    canvas.classList.remove('hidden');
+
+    // Gộp nhóm theo lựa chọn "Xem theo"
+    const groups = new Map();
+    rows.forEach(r=>{
+      const label = groupLabelOf(r.meter, groupBy);
+      if(!groups.has(label)) groups.set(label, {label, prevVol:0, curVol:0, diff:0});
+      const g = groups.get(label);
+      g.prevVol += r.prevVol;
+      g.curVol += r.curVol;
+      g.diff += r.diff;
+    });
+
+    let list = [...groups.values()].sort((a,b)=> Math.abs(b.diff) - Math.abs(a.diff));
+    list = list.slice(0, 15).sort((a,b)=> b.curVol - a.curVol);
+
+    const labels = list.map(g=> g.label.length > 24 ? g.label.slice(0,22)+'…' : g.label);
+    const prevData = list.map(g=> +g.prevVol.toFixed(2));
+    const curData = list.map(g=> +g.curVol.toFixed(2));
+
+    if(anaChart) anaChart.destroy();
+    anaChart = new Chart(canvas.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Kỳ trước (m³)', data: prevData, backgroundColor: '#cbd5e1', borderRadius: 4 },
+          { label: 'Kỳ này (m³)', data: curData, backgroundColor: '#0e7490', borderRadius: 4 }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+          tooltip: {
+            callbacks: {
+              afterBody: function(items){
+                const idx = items[0].dataIndex;
+                const g = list[idx];
+                const sign = g.diff > 0 ? '+' : '';
+                return `Chênh lệch: ${sign}${fmtNum(g.diff)} m³`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: { ticks: { autoSkip: false, maxRotation: 40, minRotation: 0, font: { size: 10 } } },
+          y: { beginAtZero: true, title: { display: true, text: 'm³', font: { size: 11 } } }
+        }
+      }
+    });
+  }
+
+  document.getElementById('anaChartGroupBy').addEventListener('change', renderAnalysisTable);
 
   // ---------- BACKUP: EXPORT / IMPORT ----------
   function download(filename, content, mime){
@@ -1706,24 +1868,143 @@
     toast('⬇️ Đã xuất file JSON.');
   });
 
-  document.getElementById('exportCsvBtn').addEventListener('click', function(){
-    const header = ['Ngày cập nhật','Chi nhánh','Nhà máy nước','Cấp cho khu vực','Vị trí','ID đồng hồ','Loại đồng hồ','Đường kính','Chỉ số','Khối lượng tiêu thụ','% thay đổi','Trạng thái','Ghi chú'];
-    const rows = [...state.readings].sort((a,b)=>a.date.localeCompare(b.date)).map(r=>{
-      const m = meterById(r.meterId);
-      if(!m) return null;
-      const prev = latestReadingBefore(r.meterId, r.date);
-      let pctStr = '';
-      if(prev){
-        const pct = prev.volume===0 ? (r.volume>0?100:0) : ((r.volume-prev.volume)/prev.volume)*100;
-        pctStr = (pct>=0?'+':'') + pct.toFixed(1) + '%';
-      }
-      return [fmtDate(r.date), m.branch, m.plant, m.area, m.location, m.code, m.type, m.diameter, r.index, r.volume, pctStr, m.status, r.note];
-    }).filter(Boolean);
+  // ---------- XUẤT BÁO CÁO EXCEL (.xlsx) THEO KHOẢNG THỜI GIAN ----------
+  function shiftDateStr(dateStr, days){
+    const d = new Date(dateStr + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0,10);
+  }
+  // Kỳ trước liền kề, cùng độ dài ngày với kỳ đang chọn (áp dụng chung cho Ngày/Tuần/Tháng/Năm)
+  function previousRange(range){
+    const start = new Date(range.start + 'T00:00:00Z');
+    const end = new Date(range.end + 'T00:00:00Z');
+    const lengthDays = Math.round((end - start) / 86400000) + 1;
+    const prevEnd = shiftDateStr(range.start, -1);
+    const prevStart = shiftDateStr(prevEnd, -(lengthDays - 1));
+    return { start: prevStart, end: prevEnd };
+  }
 
-    const csvEscape = v => `"${String(v??'').replace(/"/g,'""')}"`;
-    const csv = "\uFEFF" + [header, ...rows].map(row=>row.map(csvEscape).join(',')).join('\r\n');
-    download(`lich-su-dong-ho-nuoc_${todayStr()}.csv`, csv, 'text/csv;charset=utf-8');
-    toast('⬇️ Đã xuất file CSV.');
+  function setDefaultExportPeriod(type){
+    const input = document.getElementById('exportPeriodValue');
+    const now = new Date();
+    const pad = n => String(n).padStart(2,'0');
+    if(type === 'day'){
+      input.type = 'date'; input.removeAttribute('min'); input.removeAttribute('max');
+      if(!input.value) input.value = todayStr();
+    }else if(type === 'week'){
+      input.type = 'week'; input.removeAttribute('min'); input.removeAttribute('max');
+      if(!input.value){ const {isoYear, isoWeek} = getISOWeek(now); input.value = `${isoYear}-W${pad(isoWeek)}`; }
+    }else if(type === 'month'){
+      input.type = 'month'; input.removeAttribute('min'); input.removeAttribute('max');
+      if(!input.value) input.value = `${now.getFullYear()}-${pad(now.getMonth()+1)}`;
+    }else if(type === 'year'){
+      input.type = 'number'; input.min = 2000; input.max = 2100;
+      if(!input.value) input.value = now.getFullYear();
+    }
+  }
+  document.getElementById('exportPeriodType').addEventListener('change', function(){
+    document.getElementById('exportPeriodValue').value = '';
+    setDefaultExportPeriod(this.value);
+  });
+
+  document.getElementById('exportExcelBtn').addEventListener('click', function(){
+    const type = document.getElementById('exportPeriodType').value;
+    const val = document.getElementById('exportPeriodValue').value;
+    const range = getPeriodRange(type, val);
+    if(!range){ toast('Vui lòng chọn khoảng thời gian hợp lệ.', 'err'); return; }
+    const prevRange = previousRange(range);
+
+    const typeLabelMap = {day:'Ngày', week:'Tuần', month:'Tháng', year:'Năm'};
+    const periodLabel = `Kỳ báo cáo (${typeLabelMap[type]}): ${fmtDate(range.start)} - ${fmtDate(range.end)}  |  So với kỳ trước: ${fmtDate(prevRange.start)} - ${fmtDate(prevRange.end)}`;
+
+    const wb = XLSX.utils.book_new();
+
+    // ---- Sheet: Tổng hợp chi tiết (nêu bật chênh lệch nhiều nhất so với kỳ trước) ----
+    const summaryRows = [];
+    state.meters.forEach(m=>{
+      const hasCur = hasDataInRange(m.id, range);
+      const hasPrev = hasDataInRange(m.id, prevRange);
+      if(!hasCur && !hasPrev) return;
+      const curVol = volumeInRange(m.id, range);
+      const prevVol = volumeInRange(m.id, prevRange);
+      const diff = curVol - prevVol;
+      const pct = !prevVol ? (curVol > 0 ? 100 : 0) : (diff / prevVol) * 100;
+      summaryRows.push({m, prevVol, curVol, diff, pct});
+    });
+    summaryRows.sort((a,b) => Math.abs(b.diff) - Math.abs(a.diff));
+
+    const summaryAOA = [
+      ['BẢNG TỔNG HỢP CHI TIẾT — CHÊNH LỆCH TIÊU THỤ SO VỚI KỲ TRƯỚC'],
+      [periodLabel],
+      [],
+      ['Chi nhánh','Trạm cấp nước','Khu vực cấp','Vị trí','ID đồng hồ','Kỳ trước (m³)','Kỳ này (m³)','Chênh lệch (m³)','% thay đổi','Mức độ']
+    ];
+    summaryRows.forEach(r=>{
+      const warn = Math.abs(r.pct) >= WARN_THRESHOLD;
+      summaryAOA.push([
+        r.m.branch, r.m.plant, r.m.area || '', r.m.location, r.m.code,
+        +r.prevVol.toFixed(2), +r.curVol.toFixed(2), +r.diff.toFixed(2),
+        (isFinite(r.pct) ? (r.pct>=0?'+':'') + r.pct.toFixed(1) : '0.0') + '%',
+        warn ? '⚠️ Chênh lệch lớn' : ''
+      ]);
+    });
+    if(summaryRows.length === 0) summaryAOA.push(['(Không có đồng hồ nào có dữ liệu trong kỳ báo cáo hoặc kỳ trước)']);
+    const wsSummary = XLSX.utils.aoa_to_sheet(summaryAOA);
+    wsSummary['!cols'] = [{wch:14},{wch:24},{wch:20},{wch:24},{wch:12},{wch:14},{wch:14},{wch:14},{wch:10},{wch:18}];
+    wsSummary['!merges'] = [{s:{r:0,c:0}, e:{r:0,c:9}}, {s:{r:1,c:0}, e:{r:1,c:9}}];
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Tổng hợp chi tiết');
+
+    // ---- 1 sheet / chi nhánh, nhóm: Nhà máy -> Cấp cho khu nào -> Vị trí ----
+    BRANCHES.forEach(branch=>{
+      const branchMeters = state.meters.filter(m=>m.branch===branch);
+      const meterIdsWithData = new Set(
+        state.readings
+          .filter(r=> r.date>=range.start && r.date<=range.end && branchMeters.some(m=>m.id===r.meterId))
+          .map(r=>r.meterId)
+      );
+      if(meterIdsWithData.size === 0) return; // chi nhánh không có dữ liệu trong kỳ -> bỏ qua sheet
+
+      const aoa = [[`CHI NHÁNH: ${branch}`], [periodLabel], []];
+      const merges = [{s:{r:0,c:0}, e:{r:0,c:5}}, {s:{r:1,c:0}, e:{r:1,c:5}}];
+
+      const plants = [...new Set(branchMeters.filter(m=>meterIdsWithData.has(m.id)).map(m=>m.plant))].sort((a,b)=>a.localeCompare(b,'vi'));
+      plants.forEach(plant=>{
+        aoa.push([`▶ NHÀ MÁY / TRẠM CẤP NƯỚC: ${plant}`]);
+        merges.push({s:{r:aoa.length-1,c:0}, e:{r:aoa.length-1,c:5}});
+
+        const plantMeters = branchMeters.filter(m=>m.plant===plant && meterIdsWithData.has(m.id));
+        const areas = [...new Set(plantMeters.map(m=>m.area || '(Không có khu vực)'))].sort((a,b)=>a.localeCompare(b,'vi'));
+        areas.forEach(area=>{
+          aoa.push([`    Cấp cho khu vực: ${area}`]);
+          merges.push({s:{r:aoa.length-1,c:0}, e:{r:aoa.length-1,c:5}});
+
+          aoa.push(['Vị trí','ID đồng hồ','Ngày','Chỉ số đồng hồ (m³)','Khối lượng tiêu thụ (m³)','Ghi chú']);
+
+          const areaMeters = plantMeters.filter(m=>(m.area || '(Không có khu vực)')===area)
+            .sort((a,b)=> a.location.localeCompare(b.location,'vi') || a.code.localeCompare(b.code,'vi'));
+          areaMeters.forEach(m=>{
+            const readings = state.readings.filter(r=> r.meterId===m.id && r.date>=range.start && r.date<=range.end)
+              .sort((a,b)=> a.date.localeCompare(b.date));
+            readings.forEach(r=>{
+              aoa.push([m.location, m.code, fmtDate(r.date), r.index, r.volume, r.note || '']);
+            });
+          });
+          aoa.push([]);
+        });
+        aoa.push([]);
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = [{wch:26},{wch:14},{wch:12},{wch:18},{wch:20},{wch:24}];
+      ws['!merges'] = merges;
+      const safeName = branch.replace(/[\\/*?:\[\]]/g,'').slice(0,31) || 'Chi nhánh';
+      XLSX.utils.book_append_sheet(wb, ws, safeName);
+    });
+
+    const fileTypeLabel = {day:'ngay', week:'tuan', month:'thang', year:'nam'}[type];
+    const safeVal = String(val).replace(/[^0-9A-Za-z-]/g,'');
+    XLSX.writeFile(wb, `bao-cao-dong-ho-nuoc_${fileTypeLabel}_${safeVal}.xlsx`);
+    toast('⬇️ Đã xuất file Excel.');
   });
 
   document.getElementById('importJsonInput').addEventListener('change', function(e){
@@ -1769,7 +2050,23 @@
     document.getElementById('entryMeter').disabled = true;
     document.getElementById('entryMeter').innerHTML = '<option value="">— Chọn nhà máy trước —</option>';
     hideRefCard();
-    renderRecentList();
+    renderTodayEnteredTable();
+    renderMeterTable();
+    renderHistoryTable();
+    renderStats();
+    renderAnalysisFilters();
+    renderAnalysisTable();
+    setDefaultExportPeriod(document.getElementById('exportPeriodType').value);
+  }
+
+  // Cập nhật "ngầm" khi có dữ liệu mới đồng bộ về từ người dùng/thiết bị khác TRONG LÚC đang
+  // thao tác. Cố tình KHÔNG đụng vào form "Nhập chỉ số" (branch/plant/meter/date/index/volume/note)
+  // và KHÔNG hiện toast cảnh báo, để không làm mất nội dung người dùng đang nhập dở.
+  function renderAllQuiet(){
+    autoUpdateDailyStatus();
+    renderMeterFilterSelects();
+    renderHistoryFilters();
+    renderTodayEnteredTable();
     renderMeterTable();
     renderHistoryTable();
     renderStats();
