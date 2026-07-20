@@ -52,8 +52,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <!-- Chart.js (biểu đồ Phân tích & So sánh) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
-<!-- SheetJS (xuất file Excel .xlsx) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- ExcelJS (xuất file Excel .xlsx có định dạng màu sắc, viền, căn chỉnh) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 </head>
 <body class="text-slate-800">
 
@@ -176,7 +176,11 @@
 
         <div>
           <label class="block text-xs font-semibold text-slate-500 mb-1">Ngày cập nhật</label>
-          <input id="entryDate" type="date" required class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none">
+          <div class="flex items-stretch gap-1.5">
+            <button type="button" id="entryDatePrevBtn" title="Lùi 1 ngày (giữ để lùi nhanh)" class="shrink-0 w-10 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100 active:bg-slate-200 font-bold text-sm select-none">◀</button>
+            <input id="entryDate" type="date" required class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm font-mono-num focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none">
+            <button type="button" id="entryDateNextBtn" title="Tiến 1 ngày (giữ để tiến nhanh)" class="shrink-0 w-10 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100 active:bg-slate-200 font-bold text-sm select-none">▶</button>
+          </div>
         </div>
         <div>
           <label class="block text-xs font-semibold text-slate-500 mb-1">Chỉ số đồng hồ (m³)</label>
@@ -430,6 +434,7 @@
               <th class="text-right px-3 py-2.5 whitespace-nowrap">Kỳ Này (m³)</th>
               <th class="text-right px-3 py-2.5 whitespace-nowrap">Chênh lệch (m³)</th>
               <th class="text-center px-3 py-2.5 whitespace-nowrap">% Thay đổi</th>
+              <th class="text-center px-3 py-2.5 whitespace-nowrap">Trạng thái</th>
             </tr>
           </thead>
           <tbody id="anaTableBody" class="divide-y divide-slate-100"></tbody>
@@ -445,9 +450,9 @@
 
     <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
       <h2 class="font-bold text-slate-800 mb-2 flex items-center gap-2"><span class="w-1.5 h-5 bg-teal-600 rounded-full"></span>☁️ Đồng bộ Firebase</h2>
-      <p class="text-sm text-slate-500 mb-4">Dữ liệu tự động đồng bộ hai chiều với Firestore mỗi khi bạn thêm/sửa/xoá. Nếu đây là lần đầu chuyển từ dữ liệu cũ (lưu trong trình duyệt) lên Firebase, hãy dùng nút bên dưới để đẩy toàn bộ dữ liệu hiện có lên đám mây một lần.</p>
+      <p class="text-sm text-slate-500 mb-4">Dữ liệu tự động đồng bộ hai chiều với Firestore mỗi khi bạn thêm/sửa/xoá. Nếu máy này đang có dữ liệu cũ (lưu trong trình duyệt) mà trên đám mây chưa có, hệ thống sẽ <b>tự động đẩy lên ngầm</b> ngay khi đăng nhập — không cần thao tác thủ công. Nút bên dưới chỉ dùng khi bạn muốn <b>chủ động ghi đè</b> dữ liệu Cloud bằng dữ liệu trên máy này.</p>
       <div class="flex flex-wrap items-center gap-3">
-        <button id="pushLocalToCloudBtn" class="bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold px-4 py-2 rounded-lg">📤 Đẩy dữ liệu cũ (trên máy này) lên Firebase</button>
+        <button id="pushLocalToCloudBtn" class="bg-white border border-teal-700 text-teal-700 hover:bg-teal-50 text-sm font-semibold px-4 py-2 rounded-lg">📤 Chủ động đẩy dữ liệu máy này lên Firebase (ghi đè)</button>
         <span id="backupSyncStatus" class="text-xs text-slate-400"></span>
       </div>
     </div>
@@ -628,6 +633,7 @@
   let cloudDocExists = false;   // Firestore đã có dữ liệu chưa
   let unsubscribeSnapshot = null;
   let hasLoadedOnce = false;    // đã nhận dữ liệu lần đầu cho phiên/thiết bị này chưa
+  let autoSyncAttempted = false; // đã thử tự động đẩy dữ liệu cũ (localStorage) lên Cloud trong phiên này chưa
                                  // (lần đầu = an toàn để nạp toàn bộ vì chưa có gì đang nhập dở;
                                  //  các lần sau chỉ cập nhật ngầm, không đụng vào form đang nhập)
 
@@ -661,9 +667,22 @@
     unsubscribeSnapshot = stateDocRef.onSnapshot(function(doc){
       cloudDocExists = doc.exists;
       if(!doc.exists){
-        setSyncBadge('☁️ Chưa có dữ liệu trên đám mây', 'text-amber-200');
         cloudReady = true;
         hasLoadedOnce = true;
+        const hasLocalData = state && ((state.meters && state.meters.length) || (state.readings && state.readings.length));
+        if(hasLocalData && !autoSyncAttempted){
+          // Chưa có dữ liệu trên Cloud nhưng máy này đang có dữ liệu cũ (LocalStorage) -> tự động
+          // đẩy lên ngầm, không yêu cầu người dùng bấm nút thủ công.
+          autoSyncAttempted = true;
+          setSyncBadge('🔄 Đang tự động đồng bộ dữ liệu cũ…', 'text-amber-200');
+          pushStateToCloud().then(function(){
+            toast('☁️ Đã tự động đồng bộ dữ liệu cũ trên máy này lên Firebase.');
+            const statusEl = document.getElementById('backupSyncStatus');
+            if(statusEl) statusEl.textContent = '✅ Đã tự động đồng bộ lúc ' + new Date().toLocaleTimeString('vi-VN');
+          });
+        }else{
+          setSyncBadge('☁️ Chưa có dữ liệu trên đám mây', 'text-amber-200');
+        }
         return;
       }
       // Bỏ qua "echo" của chính lần ghi cục bộ (đã cập nhật UI rồi)
@@ -1013,6 +1032,44 @@
   document.getElementById('entryDate').value = todayStr();
   document.getElementById('todayLabel').textContent = fmtDate(todayStr());
 
+  // ---------- NÚT MŨI TÊN TĂNG/GIẢM NGÀY (± long-press tăng tốc) ----------
+  function shiftEntryDateByDays(days){
+    const input = document.getElementById('entryDate');
+    const base = input.value ? new Date(input.value + 'T00:00:00') : new Date();
+    base.setDate(base.getDate() + days);
+    const y = base.getFullYear(), m = String(base.getMonth()+1).padStart(2,'0'), d = String(base.getDate()).padStart(2,'0');
+    input.value = `${y}-${m}-${d}`;
+    input.dispatchEvent(new Event('change', {bubbles:true}));
+  }
+
+  function setupDateStepper(btnId, direction){
+    const btn = document.getElementById(btnId);
+    let holdTimeout = null, holdInterval = null, speedStep = 0;
+
+    function stopHold(){
+      clearTimeout(holdTimeout); clearInterval(holdInterval);
+      holdTimeout = null; holdInterval = null; speedStep = 0;
+    }
+    function accelerate(){
+      // Càng giữ lâu càng nhảy nhanh: 500ms/lần -> 250ms -> 120ms, tối đa mỗi lần nhảy 3 ngày
+      clearInterval(holdInterval);
+      speedStep++;
+      const delay = speedStep < 3 ? 450 : (speedStep < 6 ? 220 : 110);
+      const jump = speedStep < 6 ? 1 : (speedStep < 12 ? 2 : 3);
+      holdInterval = setInterval(()=>{ shiftEntryDateByDays(direction * jump); accelerate(); }, delay);
+    }
+    function startHold(e){
+      e.preventDefault();
+      shiftEntryDateByDays(direction); // bước đầu tiên ngay khi bấm
+      holdTimeout = setTimeout(()=>{ accelerate(); }, 450);
+    }
+    btn.addEventListener('mousedown', startHold);
+    btn.addEventListener('touchstart', startHold, {passive:false});
+    ['mouseup','mouseleave','touchend','touchcancel'].forEach(evt=> btn.addEventListener(evt, stopHold));
+  }
+  setupDateStepper('entryDatePrevBtn', -1);
+  setupDateStepper('entryDateNextBtn', 1);
+
   document.getElementById('entryForm').addEventListener('submit', function(e){
     e.preventDefault();
     const meterId = document.getElementById('entryMeter').value;
@@ -1049,13 +1106,20 @@
     renderMeterFilterSelects();
 
     if(isDailyMeter){
-      // Đồng hồ đang ở trạng thái "Cập nhật hàng ngày" -> được phép làm mới lại toàn bộ form
-      // để tiện nhập sang đồng hồ tiếp theo.
+      // Đồng hồ đang ở trạng thái "Cập nhật hàng ngày" (đã hoàn thành chu trình nhập của ngày đó)
+      // -> vẫn xoá trống toàn bộ form như cũ để tiện chuyển sang đồng hồ khác.
       document.getElementById('entryResetBtn').click();
     }else{
-      // Mặc định: giữ nguyên toàn bộ nội dung đã nhập/chọn trên form (không xoá trắng),
-      // chỉ cập nhật lại thẻ tham chiếu để phản ánh dữ liệu vừa lưu.
+      // Giữ lại Chi nhánh / Nhà máy nước / Đồng hồ đã chọn, tự động nhảy sang ngày kế tiếp,
+      // và chỉ làm trống Chỉ số đồng hồ + Khối lượng tiêu thụ để sẵn sàng nhập lượt tiếp theo
+      // cho cùng thiết bị mà không cần chọn lại danh mục.
+      shiftEntryDateByDays(1);
+      document.getElementById('entryIndex').value = '';
+      document.getElementById('entryVolume').value = '';
+      document.getElementById('comparePreview').classList.add('hidden');
+      updateEntryRequiredState(meterId);
       showRefCard(meterId);
+      document.getElementById('entryIndex').focus();
     }
   });
 
@@ -1757,6 +1821,13 @@
       const pctSign = r.pct > 0 ? '+' : '';
       const diffSign = r.diff > 0 ? '+' : '';
 
+      // Trạng thái đánh giá tường minh theo ngưỡng cảnh báo
+      let statusLabel, statusClass;
+      if(r.pct >= WARN_THRESHOLD){ statusLabel = '🔴 Tăng đột biến'; statusClass = 'bg-red-100 text-red-700'; }
+      else if(r.pct <= -WARN_THRESHOLD){ statusLabel = '🔴 Sụt giảm mạnh'; statusClass = 'bg-red-100 text-red-700'; }
+      else if(r.pct >= WARN_THRESHOLD*0.66 || r.pct <= -WARN_THRESHOLD*0.66){ statusLabel = '🟡 Cận ngưỡng'; statusClass = 'bg-amber-100 text-amber-700'; }
+      else{ statusLabel = '🟢 Bình thường'; statusClass = 'bg-emerald-100 text-emerald-700'; }
+
       return `<tr class="${rowClass} transition">
         <td class="px-3 py-2.5 font-mono-num font-semibold whitespace-nowrap">${escapeHtml(r.meter.code)}</td>
         <td class="px-3 py-2.5 whitespace-nowrap">${escapeHtml(r.meter.branch)}</td>
@@ -1766,6 +1837,9 @@
         <td class="px-3 py-2.5 text-right font-mono-num font-semibold ${trendColor}">${diffSign}${fmtNum(r.diff)}</td>
         <td class="px-3 py-2.5 text-center">
           <span class="inline-flex items-center gap-1 text-xs font-bold ${trendColor}">${trendIcon} ${pctSign}${pctDisplay}%${warn ? ' ⚠️' : ''}</span>
+        </td>
+        <td class="px-3 py-2.5 text-center">
+          <span class="inline-block text-[11px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${statusClass}">${statusLabel}</span>
         </td>
       </tr>`;
     }).join('');
@@ -1907,104 +1981,217 @@
     setDefaultExportPeriod(this.value);
   });
 
-  document.getElementById('exportExcelBtn').addEventListener('click', function(){
+  // ---------- Style dùng chung cho báo cáo Excel ----------
+  const XL_THIN = { style: 'thin', color: { argb: 'FFCBD5E1' } };
+  function xlBorderAll(cell){ cell.border = { top: XL_THIN, left: XL_THIN, bottom: XL_THIN, right: XL_THIN }; }
+  const XL_COLOR = {
+    titleFill: 'FF0C4A6E', headerFill: 'FF0E7490', plantFill: 'FFCCFBF1', areaFill: 'FFF1F5F9',
+    subHeaderFill: 'FFE2E8F0', red: 'FFFEE2E2', redText: 'FF991B1B', yellow: 'FFFEF9C3', yellowText: 'FF92400E',
+    white: 'FFFFFFFF'
+  };
+  // Đánh giá mức độ cảnh báo của 1 đồng hồ theo % chênh lệch + trạng thái vận hành
+  function classifyWarnLevel(pct, meter){
+    const absPct = isFinite(pct) ? Math.abs(pct) : 0;
+    if(absPct >= WARN_THRESHOLD) return {level:'red', label:'⚠️ Vượt ngưỡng ±' + WARN_THRESHOLD + '%'};
+    if(absPct >= WARN_THRESHOLD*0.66) return {level:'yellow', label:'🟡 Cận ngưỡng cảnh báo'};
+    if(meter && meter.status !== 'Cập nhật hàng ngày') return {level:'yellow', label:'🟡 Trạng thái không ổn định'};
+    return {level:'none', label:'Bình thường'};
+  }
+  function xlFillRow(row, level){
+    if(level === 'none') return;
+    const argb = level === 'red' ? XL_COLOR.red : XL_COLOR.yellow;
+    const fontColor = level === 'red' ? XL_COLOR.redText : XL_COLOR.yellowText;
+    row.eachCell({ includeEmpty: true }, cell=>{
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
+      if(!cell.font || !cell.font.bold) cell.font = Object.assign({}, cell.font, { color: { argb: fontColor } });
+    });
+  }
+
+  document.getElementById('exportExcelBtn').addEventListener('click', async function(){
+    const btn = this;
     const type = document.getElementById('exportPeriodType').value;
     const val = document.getElementById('exportPeriodValue').value;
     const range = getPeriodRange(type, val);
     if(!range){ toast('Vui lòng chọn khoảng thời gian hợp lệ.', 'err'); return; }
     const prevRange = previousRange(range);
 
-    const typeLabelMap = {day:'Ngày', week:'Tuần', month:'Tháng', year:'Năm'};
-    const periodLabel = `Kỳ báo cáo (${typeLabelMap[type]}): ${fmtDate(range.start)} - ${fmtDate(range.end)}  |  So với kỳ trước: ${fmtDate(prevRange.start)} - ${fmtDate(prevRange.end)}`;
+    btn.disabled = true;
+    const originalLabel = btn.textContent;
+    btn.textContent = '⏳ Đang tạo file...';
 
-    const wb = XLSX.utils.book_new();
+    try{
+      const typeLabelMap = {day:'Ngày', week:'Tuần', month:'Tháng', year:'Năm'};
+      const periodLabel = `Kỳ báo cáo (${typeLabelMap[type]}): ${fmtDate(range.start)} - ${fmtDate(range.end)}  |  So với kỳ trước: ${fmtDate(prevRange.start)} - ${fmtDate(prevRange.end)}`;
 
-    // ---- Sheet: Tổng hợp chi tiết (nêu bật chênh lệch nhiều nhất so với kỳ trước) ----
-    const summaryRows = [];
-    state.meters.forEach(m=>{
-      const hasCur = hasDataInRange(m.id, range);
-      const hasPrev = hasDataInRange(m.id, prevRange);
-      if(!hasCur && !hasPrev) return;
-      const curVol = volumeInRange(m.id, range);
-      const prevVol = volumeInRange(m.id, prevRange);
-      const diff = curVol - prevVol;
-      const pct = !prevVol ? (curVol > 0 ? 100 : 0) : (diff / prevVol) * 100;
-      summaryRows.push({m, prevVol, curVol, diff, pct});
-    });
-    summaryRows.sort((a,b) => Math.abs(b.diff) - Math.abs(a.diff));
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Sổ theo dõi đồng hồ nước';
+      workbook.created = new Date();
 
-    const summaryAOA = [
-      ['BẢNG TỔNG HỢP CHI TIẾT — CHÊNH LỆCH TIÊU THỤ SO VỚI KỲ TRƯỚC'],
-      [periodLabel],
-      [],
-      ['Chi nhánh','Trạm cấp nước','Khu vực cấp','Vị trí','ID đồng hồ','Kỳ trước (m³)','Kỳ này (m³)','Chênh lệch (m³)','% thay đổi','Mức độ']
-    ];
-    summaryRows.forEach(r=>{
-      const warn = Math.abs(r.pct) >= WARN_THRESHOLD;
-      summaryAOA.push([
-        r.m.branch, r.m.plant, r.m.area || '', r.m.location, r.m.code,
-        +r.prevVol.toFixed(2), +r.curVol.toFixed(2), +r.diff.toFixed(2),
-        (isFinite(r.pct) ? (r.pct>=0?'+':'') + r.pct.toFixed(1) : '0.0') + '%',
-        warn ? '⚠️ Chênh lệch lớn' : ''
-      ]);
-    });
-    if(summaryRows.length === 0) summaryAOA.push(['(Không có đồng hồ nào có dữ liệu trong kỳ báo cáo hoặc kỳ trước)']);
-    const wsSummary = XLSX.utils.aoa_to_sheet(summaryAOA);
-    wsSummary['!cols'] = [{wch:14},{wch:24},{wch:20},{wch:24},{wch:12},{wch:14},{wch:14},{wch:14},{wch:10},{wch:18}];
-    wsSummary['!merges'] = [{s:{r:0,c:0}, e:{r:0,c:9}}, {s:{r:1,c:0}, e:{r:1,c:9}}];
-    XLSX.utils.book_append_sheet(wb, wsSummary, 'Tổng hợp chi tiết');
+      // ================= SHEET 1: TỔNG HỢP CHI TIẾT =================
+      const summaryRows = [];
+      state.meters.forEach(m=>{
+        const hasCur = hasDataInRange(m.id, range);
+        const hasPrev = hasDataInRange(m.id, prevRange);
+        if(!hasCur && !hasPrev) return;
+        const curVol = volumeInRange(m.id, range);
+        const prevVol = volumeInRange(m.id, prevRange);
+        const diff = curVol - prevVol;
+        const pct = !prevVol ? (curVol > 0 ? 100 : 0) : (diff / prevVol) * 100;
+        summaryRows.push({m, prevVol, curVol, diff, pct});
+      });
+      summaryRows.sort((a,b) => Math.abs(b.diff) - Math.abs(a.diff));
 
-    // ---- 1 sheet / chi nhánh, nhóm: Nhà máy -> Cấp cho khu nào -> Vị trí ----
-    BRANCHES.forEach(branch=>{
-      const branchMeters = state.meters.filter(m=>m.branch===branch);
-      const meterIdsWithData = new Set(
-        state.readings
-          .filter(r=> r.date>=range.start && r.date<=range.end && branchMeters.some(m=>m.id===r.meterId))
-          .map(r=>r.meterId)
-      );
-      if(meterIdsWithData.size === 0) return; // chi nhánh không có dữ liệu trong kỳ -> bỏ qua sheet
+      const wsSummary = workbook.addWorksheet('Tổng hợp chi tiết', { views: [{ state: 'frozen', ySplit: 4 }] });
+      wsSummary.columns = [
+        {width:14},{width:26},{width:22},{width:26},{width:14},
+        {width:16},{width:16},{width:16},{width:12},{width:24}
+      ];
 
-      const aoa = [[`CHI NHÁNH: ${branch}`], [periodLabel], []];
-      const merges = [{s:{r:0,c:0}, e:{r:0,c:5}}, {s:{r:1,c:0}, e:{r:1,c:5}}];
+      wsSummary.mergeCells(1,1,1,10);
+      const titleCell = wsSummary.getCell(1,1);
+      titleCell.value = 'BẢNG TỔNG HỢP CHI TIẾT — CHÊNH LỆCH TIÊU THỤ SO VỚI KỲ TRƯỚC';
+      titleCell.font = { bold: true, size: 13, color: { argb: XL_COLOR.white } };
+      titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XL_COLOR.titleFill } };
+      wsSummary.getRow(1).height = 26;
 
-      const plants = [...new Set(branchMeters.filter(m=>meterIdsWithData.has(m.id)).map(m=>m.plant))].sort((a,b)=>a.localeCompare(b,'vi'));
-      plants.forEach(plant=>{
-        aoa.push([`▶ NHÀ MÁY / TRẠM CẤP NƯỚC: ${plant}`]);
-        merges.push({s:{r:aoa.length-1,c:0}, e:{r:aoa.length-1,c:5}});
+      wsSummary.mergeCells(2,1,2,10);
+      const subTitleCell = wsSummary.getCell(2,1);
+      subTitleCell.value = periodLabel;
+      subTitleCell.font = { italic: true, size: 10, color: { argb: 'FF334155' } };
+      subTitleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+      subTitleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
 
-        const plantMeters = branchMeters.filter(m=>m.plant===plant && meterIdsWithData.has(m.id));
-        const areas = [...new Set(plantMeters.map(m=>m.area || '(Không có khu vực)'))].sort((a,b)=>a.localeCompare(b,'vi'));
-        areas.forEach(area=>{
-          aoa.push([`    Cấp cho khu vực: ${area}`]);
-          merges.push({s:{r:aoa.length-1,c:0}, e:{r:aoa.length-1,c:5}});
+      const headerRow = wsSummary.getRow(4);
+      headerRow.values = ['Chi nhánh','Trạm cấp nước','Khu vực cấp','Vị trí','ID đồng hồ','Kỳ trước (m³)','Kỳ này (m³)','Chênh lệch (m³)','% thay đổi','Mức độ cảnh báo'];
+      headerRow.eachCell(cell=>{
+        cell.font = { bold: true, color: { argb: XL_COLOR.white } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XL_COLOR.headerFill } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+        xlBorderAll(cell);
+      });
+      headerRow.height = 24;
 
-          aoa.push(['Vị trí','ID đồng hồ','Ngày','Chỉ số đồng hồ (m³)','Khối lượng tiêu thụ (m³)','Ghi chú']);
-
-          const areaMeters = plantMeters.filter(m=>(m.area || '(Không có khu vực)')===area)
-            .sort((a,b)=> a.location.localeCompare(b.location,'vi') || a.code.localeCompare(b.code,'vi'));
-          areaMeters.forEach(m=>{
-            const readings = state.readings.filter(r=> r.meterId===m.id && r.date>=range.start && r.date<=range.end)
-              .sort((a,b)=> a.date.localeCompare(b.date));
-            readings.forEach(r=>{
-              aoa.push([m.location, m.code, fmtDate(r.date), r.index, r.volume, r.note || '']);
-            });
+      if(summaryRows.length === 0){
+        wsSummary.mergeCells(5,1,5,10);
+        const emptyCell = wsSummary.getCell(5,1);
+        emptyCell.value = '(Không có đồng hồ nào có dữ liệu trong kỳ báo cáo hoặc kỳ trước)';
+        emptyCell.alignment = { horizontal: 'center' };
+        emptyCell.font = { italic: true, color: { argb: 'FF94A3B8' } };
+      }else{
+        summaryRows.forEach(r=>{
+          const warnInfo = classifyWarnLevel(r.pct, r.m);
+          const row = wsSummary.addRow([
+            r.m.branch, r.m.plant, r.m.area || '—', r.m.location, r.m.code,
+            +r.prevVol.toFixed(2), +r.curVol.toFixed(2), +r.diff.toFixed(2),
+            isFinite(r.pct) ? r.pct/100 : 0,
+            warnInfo.label
+          ]);
+          row.getCell(6).numFmt = '#,##0.00';
+          row.getCell(7).numFmt = '#,##0.00';
+          row.getCell(8).numFmt = '+#,##0.00;-#,##0.00;0.00';
+          row.getCell(9).numFmt = '+0.0%;-0.0%;0.0%';
+          row.getCell(8).font = { bold: true };
+          row.getCell(9).font = { bold: true };
+          row.eachCell({ includeEmpty: true }, cell=>{
+            xlBorderAll(cell);
+            cell.alignment = cell.alignment || { vertical: 'middle' };
           });
-          aoa.push([]);
+          [6,7,8,9].forEach(c=> row.getCell(c).alignment = { horizontal: 'right', vertical: 'middle' });
+          row.getCell(10).alignment = { horizontal: 'center', vertical: 'middle' };
+          xlFillRow(row, warnInfo.level);
         });
-        aoa.push([]);
+      }
+      wsSummary.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4, column: 10 } };
+
+      // ================= 1 SHEET / CHI NHÁNH =================
+      BRANCHES.forEach(branch=>{
+        const branchMeters = state.meters.filter(m=>m.branch===branch);
+        const meterIdsWithData = new Set(
+          state.readings
+            .filter(r=> r.date>=range.start && r.date<=range.end && branchMeters.some(m=>m.id===r.meterId))
+            .map(r=>r.meterId)
+        );
+        if(meterIdsWithData.size === 0) return; // chi nhánh không có dữ liệu trong kỳ -> bỏ qua sheet
+
+        const safeName = branch.replace(/[\\/*?:\[\]]/g,'').slice(0,31) || 'Chi nhánh';
+        const ws = workbook.addWorksheet(safeName);
+        ws.columns = [{width:26},{width:14},{width:12},{width:20},{width:22},{width:26}];
+
+        ws.mergeCells(1,1,1,6);
+        const bTitle = ws.getCell(1,1);
+        bTitle.value = `CHI NHÁNH: ${branch}`;
+        bTitle.font = { bold: true, size: 13, color: { argb: XL_COLOR.white } };
+        bTitle.alignment = { vertical: 'middle', horizontal: 'center' };
+        bTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XL_COLOR.titleFill } };
+        ws.getRow(1).height = 24;
+
+        ws.mergeCells(2,1,2,6);
+        const bSub = ws.getCell(2,1);
+        bSub.value = periodLabel;
+        bSub.font = { italic: true, size: 10, color: { argb: 'FF334155' } };
+        bSub.alignment = { vertical: 'middle', horizontal: 'center' };
+        bSub.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+
+        ws.addRow([]); // dòng trống thứ 3
+
+        const plants = [...new Set(branchMeters.filter(m=>meterIdsWithData.has(m.id)).map(m=>m.plant))].sort((a,b)=>a.localeCompare(b,'vi'));
+        plants.forEach(plant=>{
+          const plantRow = ws.addRow([`▶ NHÀ MÁY / TRẠM CẤP NƯỚC: ${plant}`]);
+          ws.mergeCells(plantRow.number,1,plantRow.number,6);
+          plantRow.getCell(1).font = { bold: true, color: { argb: 'FF0F766E' } };
+          plantRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XL_COLOR.plantFill } };
+          plantRow.getCell(1).alignment = { vertical: 'middle' };
+          plantRow.height = 20;
+
+          const plantMeters = branchMeters.filter(m=>m.plant===plant && meterIdsWithData.has(m.id));
+          const areas = [...new Set(plantMeters.map(m=>m.area || '(Không có khu vực)'))].sort((a,b)=>a.localeCompare(b,'vi'));
+          areas.forEach(area=>{
+            const areaRow = ws.addRow([`    Cấp cho khu vực: ${area}`]);
+            ws.mergeCells(areaRow.number,1,areaRow.number,6);
+            areaRow.getCell(1).font = { italic: true, color: { argb: 'FF475569' } };
+            areaRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XL_COLOR.areaFill } };
+
+            const subHeaderRow = ws.addRow(['Vị trí','ID đồng hồ','Ngày','Chỉ số đồng hồ (m³)','Khối lượng tiêu thụ (m³)','Ghi chú']);
+            subHeaderRow.eachCell(cell=>{
+              cell.font = { bold: true };
+              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: XL_COLOR.subHeaderFill } };
+              cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+              xlBorderAll(cell);
+            });
+
+            const areaMeters = plantMeters.filter(m=>(m.area || '(Không có khu vực)')===area)
+              .sort((a,b)=> a.location.localeCompare(b.location,'vi') || a.code.localeCompare(b.code,'vi'));
+            areaMeters.forEach(m=>{
+              const readings = state.readings.filter(r=> r.meterId===m.id && r.date>=range.start && r.date<=range.end)
+                .sort((a,b)=> a.date.localeCompare(b.date));
+              readings.forEach(r=>{
+                const dataRow = ws.addRow([m.location, m.code, fmtDate(r.date), r.index, r.volume, r.note || '']);
+                dataRow.eachCell({ includeEmpty: true }, cell=> xlBorderAll(cell));
+                dataRow.getCell(4).numFmt = '#,##0.00';
+                dataRow.getCell(4).alignment = { horizontal: 'right' };
+                dataRow.getCell(5).numFmt = '#,##0.00';
+                dataRow.getCell(5).alignment = { horizontal: 'right' };
+              });
+            });
+            ws.addRow([]);
+          });
+          ws.addRow([]);
+        });
       });
 
-      const ws = XLSX.utils.aoa_to_sheet(aoa);
-      ws['!cols'] = [{wch:26},{wch:14},{wch:12},{wch:18},{wch:20},{wch:24}];
-      ws['!merges'] = merges;
-      const safeName = branch.replace(/[\\/*?:\[\]]/g,'').slice(0,31) || 'Chi nhánh';
-      XLSX.utils.book_append_sheet(wb, ws, safeName);
-    });
-
-    const fileTypeLabel = {day:'ngay', week:'tuan', month:'thang', year:'nam'}[type];
-    const safeVal = String(val).replace(/[^0-9A-Za-z-]/g,'');
-    XLSX.writeFile(wb, `bao-cao-dong-ho-nuoc_${fileTypeLabel}_${safeVal}.xlsx`);
-    toast('⬇️ Đã xuất file Excel.');
+      const buffer = await workbook.xlsx.writeBuffer();
+      const fileTypeLabel = {day:'ngay', week:'tuan', month:'thang', year:'nam'}[type];
+      const safeVal = String(val).replace(/[^0-9A-Za-z-]/g,'');
+      download(`bao-cao-dong-ho-nuoc_${fileTypeLabel}_${safeVal}.xlsx`, buffer, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      toast('⬇️ Đã xuất file Excel.');
+    }catch(err){
+      console.error('Lỗi xuất Excel:', err);
+      toast('⚠️ Không xuất được file Excel: ' + err.message, 'err');
+    }finally{
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
   });
 
   document.getElementById('importJsonInput').addEventListener('change', function(e){
