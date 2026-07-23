@@ -454,7 +454,9 @@
 // ============================================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
+// ⚠️ THAY THẾ toàn bộ object bên dưới bằng config thật của bạn
 const firebaseConfig = {
   apiKey: "AIzaSyDwWv1EbAMugqCJ6U6FCf4qm1I0uUu2ov4",
   authDomain: "so-de-xuat-hang-ngay-4cae1.firebaseapp.com",
@@ -468,6 +470,46 @@ const firebaseApp = initializeApp(firebaseConfig);
 
 // Export Firestore instance để app.js import và dùng chung
 const db = getFirestore(firebaseApp);
+
+// ----------------------------------------------------------------------------
+// ĐĂNG NHẬP ẨN DANH (Anonymous Auth)
+// firestore.rules yêu cầu request.auth != null mới cho ghi dữ liệu. App này
+// không có màn hình đăng nhập riêng nên tự đăng nhập ẩn danh ngay khi tải
+// trang. Bạn PHẢI bật "Anonymous" trong Firebase Console -> Authentication ->
+// Sign-in method, nếu không bước này sẽ báo lỗi và mọi thao tác Lưu/Tải từ
+// Cloud sẽ bị chặn bởi rules.
+// ----------------------------------------------------------------------------
+const auth = getAuth(firebaseApp);
+let authReady = false;
+const authReadyPromise = new Promise((resolve) => {
+  onAuthStateChanged(auth, (user) => {
+    authReady = !!user;
+    resolve(user);
+    const badge = document.getElementById("sync-text");
+    if (!user && badge) badge.textContent = "Chưa đăng nhập Firebase";
+  });
+});
+signInAnonymously(auth).catch((err) => {
+  console.error("Lỗi đăng nhập ẩn danh:", err);
+  const badge = document.getElementById("sync-text");
+  if (badge) badge.textContent = "Lỗi đăng nhập: " + err.code;
+  toast_early("Không thể đăng nhập Firebase: " + err.code + " — kiểm tra đã bật Anonymous Sign-in chưa.");
+});
+// toast() được định nghĩa phía dưới; hàm nhỏ này chỉ dùng để hiện lỗi sớm
+// trước khi phần còn lại của app khởi tạo xong.
+function toast_early(msg) {
+  window.addEventListener("DOMContentLoaded", () => {
+    const el = document.getElementById("toast");
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.remove("hidden");
+  });
+  if (document.readyState !== "loading") {
+    const el = document.getElementById("toast");
+    if (el) { el.textContent = msg; el.classList.remove("hidden"); }
+  }
+}
+
 
 
 // ============================================================================
@@ -578,6 +620,10 @@ async function saveToCloud() {
   const btn = document.getElementById("btn-save-cloud");
   btn.disabled = true; btn.textContent = "Đang lưu...";
   try {
+    // Đợi đăng nhập ẩn danh hoàn tất trước khi ghi (rules yêu cầu request.auth != null)
+    const user = await authReadyPromise;
+    if (!user) throw new Error("Chưa đăng nhập Firebase — kiểm tra đã bật Anonymous Sign-in trong Authentication chưa.");
+
     const batch = writeBatch(db);
 
     // Ghi/ cập nhật đồng hồ
@@ -617,6 +663,9 @@ async function loadFromCloud() {
   const btn = document.getElementById("btn-load-cloud");
   btn.disabled = true; btn.textContent = "Đang tải...";
   try {
+    const user = await authReadyPromise;
+    if (!user) throw new Error("Chưa đăng nhập Firebase — kiểm tra đã bật Anonymous Sign-in trong Authentication chưa.");
+
     const [metersSnap, readingsSnap] = await Promise.all([
       getDocs(collection(db, "meters")),
       getDocs(collection(db, "readings"))
