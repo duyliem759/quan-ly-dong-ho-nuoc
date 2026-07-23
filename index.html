@@ -637,6 +637,30 @@
                                  // (lần đầu = an toàn để nạp toàn bộ vì chưa có gì đang nhập dở;
                                  //  các lần sau chỉ cập nhật ngầm, không đụng vào form đang nhập)
 
+  // ---------- CHỐNG MẤT DỮ LIỆU KHI RELOAD/RESET ----------
+  // Vấn đề gốc: pushStateToCloud() ghi lên Firestore theo kiểu "bắn rồi quên" (không đợi xong).
+  // Nếu người dùng bấm Lưu rồi F5/tắt máy NGAY khi request chưa kịp lên tới server, lần tải trang
+  // sau đó onSnapshot() sẽ nhận về bản ghi CŨ từ Cloud và (theo logic cũ) sẽ ghi đè lên dữ liệu MỚI
+  // đang có trong localStorage. Để chặn việc này, mỗi lần lưu cục bộ sẽ được gắn 1 mốc thời gian
+  // (clientUpdatedAt) lưu song song trong localStorage; khi nhận snapshot đầu tiên, nếu dữ liệu cục
+  // bộ mới hơn (hoặc lần đẩy lên Cloud gần nhất còn đang dang dở/pending) thì KHÔNG ghi đè local,
+  // mà chủ động đẩy lại dữ liệu local lên Cloud để tự "chữa lành" đồng bộ.
+  const SYNC_META_KEY = STORAGE_KEY + '__syncMeta';
+
+  function getSyncMeta(){
+    try{
+      const raw = localStorage.getItem(SYNC_META_KEY);
+      if(raw){
+        const parsed = JSON.parse(raw);
+        if(parsed && typeof parsed === 'object') return parsed;
+      }
+    }catch(e){ /* ignore, dùng mặc định */ }
+    return {updatedAt: 0, pending: false};
+  }
+  function setSyncMeta(meta){
+    try{ localStorage.setItem(SYNC_META_KEY, JSON.stringify(meta)); }catch(e){ console.warn('Không lưu được syncMeta:', e); }
+  }
+
   function setSyncBadge(text, colorClass){
     const el = document.getElementById('syncBadge');
     if(!el) return;
@@ -646,19 +670,27 @@
 
   function pushStateToCloud(){
     if(!currentUser) return Promise.resolve();
+    // Đánh dấu "đang gửi" NGAY trước khi gọi Firestore. Nếu trang bị tải lại/tắt trước khi Firestore
+    // xác nhận, cờ pending=true này vẫn còn trong localStorage để lần sau tự đẩy lại dữ liệu.
+    const clientUpdatedAt = Date.now();
+    setSyncMeta({updatedAt: clientUpdatedAt, pending: true});
     setSyncBadge('🔄 Đang đồng bộ…', 'text-amber-200');
     return stateDocRef.set({
       meters: state.meters,
       readings: state.readings,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      clientUpdatedAt: clientUpdatedAt,
       updatedBy: currentUser.email
     }).then(()=>{
       cloudDocExists = true;
+      // Ghi thành công lên Firestore -> tắt cờ pending, xác nhận mốc thời gian đã đồng bộ.
+      setSyncMeta({updatedAt: clientUpdatedAt, pending: false});
       setSyncBadge('🟢 Đã đồng bộ', 'text-emerald-200');
     }).catch(err=>{
       console.error('Lỗi đẩy dữ liệu lên Firebase:', err);
       setSyncBadge('🔴 Lỗi đồng bộ', 'text-red-200');
       toast('⚠️ Không đồng bộ được lên Firebase: ' + err.message, 'err');
+      // Giữ nguyên pending=true để lần tải trang kế tiếp biết cần đẩy lại dữ liệu này.
     });
   }
 
@@ -691,19 +723,35 @@
         return;
       }
       const data = doc.data();
-      const incoming = JSON.stringify({meters: data.meters||[], readings: data.readings||[]});
+      const incomingState = {meters: data.meters||[], readings: data.readings||[]};
+      const incomingJson = JSON.stringify(incomingState);
       const currentJson = JSON.stringify({meters: state.meters, readings: state.readings});
-      if(incoming !== currentJson){
-        state = {meters: data.meters||[], readings: data.readings||[]};
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        if(!hasLoadedOnce){
-          // Lần nạp dữ liệu đầu tiên trên thiết bị/phiên này (vd: vừa đăng nhập trên máy chưa từng
-          // đăng nhập) -> form nhập chỉ số đang trống, an toàn để nạp toàn bộ giao diện.
-          renderAll();
+      if(incomingJson !== currentJson){
+        const meta = getSyncMeta();
+        const incomingClientUpdatedAt = typeof data.clientUpdatedAt === 'number' ? data.clientUpdatedAt : 0;
+        // Dữ liệu cục bộ được coi là "mới hơn/đáng tin hơn" dữ liệu Cloud vừa nhận về khi:
+        //  - lần lưu gần nhất trên máy này vẫn đang "pending" (chưa chắc đã lên tới server), hoặc
+        //  - mốc thời gian lưu cục bộ >= mốc thời gian của bản ghi Cloud đang nhận.
+        const localIsAuthoritative = meta.pending || (meta.updatedAt && meta.updatedAt >= incomingClientUpdatedAt);
+
+        if(!hasLoadedOnce && localIsAuthoritative){
+          // KHÔNG ghi đè dữ liệu vừa nhập/đang có trong localStorage bằng dữ liệu Cloud cũ hơn.
+          // Chủ động đẩy lại dữ liệu cục bộ lên Cloud để tự sửa lại đồng bộ cho đúng.
+          console.warn('Bỏ qua dữ liệu Cloud (cũ hơn hoặc chưa xác nhận) để tránh mất dữ liệu vừa nhập. Đang đẩy lại dữ liệu cục bộ lên Cloud.');
+          pushStateToCloud();
         }else{
-          // Đồng bộ nền trong lúc đang thao tác: KHÔNG hiển thị cảnh báo và KHÔNG làm mới
-          // form nhập chỉ số (tránh mất dữ liệu đang nhập dở). Chỉ âm thầm cập nhật các bảng khác.
-          renderAllQuiet();
+          state = incomingState;
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+          setSyncMeta({updatedAt: incomingClientUpdatedAt, pending: false});
+          if(!hasLoadedOnce){
+            // Lần nạp dữ liệu đầu tiên trên thiết bị/phiên này (vd: vừa đăng nhập trên máy chưa từng
+            // đăng nhập) -> form nhập chỉ số đang trống, an toàn để nạp toàn bộ giao diện.
+            renderAll();
+          }else{
+            // Đồng bộ nền trong lúc đang thao tác: KHÔNG hiển thị cảnh báo và KHÔNG làm mới
+            // form nhập chỉ số (tránh mất dữ liệu đang nhập dở). Chỉ âm thầm cập nhật các bảng khác.
+            renderAllQuiet();
+          }
         }
       }
       setSyncBadge('🟢 Đã đồng bộ', 'text-emerald-200');
@@ -834,7 +882,14 @@
   }
   function saveState(s){
     localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
-    if(cloudReady) pushStateToCloud();
+    if(cloudReady){
+      pushStateToCloud();
+    }else{
+      // Chưa sẵn sàng đồng bộ lên Cloud (vd: vừa mới đăng nhập, listener chưa gắn xong).
+      // Vẫn đánh dấu là "pending" với mốc thời gian lưu cục bộ mới nhất, để khi listener
+      // gắn xong và nhận snapshot đầu tiên, dữ liệu vừa lưu KHÔNG bị dữ liệu Cloud cũ đè lên.
+      setSyncMeta({updatedAt: Date.now(), pending: true});
+    }
   }
 
   let state = loadState();
