@@ -109,9 +109,10 @@
         <p id="todayLabel" class="text-xs sm:text-sm font-semibold font-mono-num"></p>
       </div>
       <div class="text-right border-l border-white/20 pl-3">
-        <p id="syncBadge" class="text-[11px] font-semibold whitespace-nowrap">⏳ Đang kết nối…</p>
+        <p id="syncBadge" class="text-[11px] font-semibold whitespace-nowrap">🖐️ Chế độ thủ công</p>
         <p id="userEmailLabel" class="text-[11px] text-teal-100/70 truncate max-w-[120px]"></p>
       </div>
+      <button id="saveToCloudBtn" title="Lưu dữ liệu hiện tại lên Firebase" class="bg-white/15 hover:bg-white/25 text-white text-xs font-semibold px-3 py-1.5 rounded-lg whitespace-nowrap shrink-0">💾 Lưu Cloud</button>
       <button id="logoutBtn" title="Đăng xuất" class="text-teal-100/80 hover:text-white text-lg leading-none">⏻</button>
     </div>
   </div>
@@ -449,17 +450,18 @@
   <section id="panel-backup" class="tab-panel space-y-4">
 
     <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
-      <h2 class="font-bold text-slate-800 mb-2 flex items-center gap-2"><span class="w-1.5 h-5 bg-teal-600 rounded-full"></span>☁️ Đồng bộ Firebase</h2>
-      <p class="text-sm text-slate-500 mb-4">Dữ liệu tự động đồng bộ hai chiều với Firestore mỗi khi bạn thêm/sửa/xoá. Nếu máy này đang có dữ liệu cũ (lưu trong trình duyệt) mà trên đám mây chưa có, hệ thống sẽ <b>tự động đẩy lên ngầm</b> ngay khi đăng nhập — không cần thao tác thủ công. Nút bên dưới chỉ dùng khi bạn muốn <b>chủ động ghi đè</b> dữ liệu Cloud bằng dữ liệu trên máy này.</p>
+      <h2 class="font-bold text-slate-800 mb-2 flex items-center gap-2"><span class="w-1.5 h-5 bg-teal-600 rounded-full"></span>☁️ Đồng bộ Firebase (thủ công)</h2>
+      <p class="text-sm text-slate-500 mb-4">Ứng dụng <b>không còn tự động tải hoặc ghi đè dữ liệu</b> khi mở/tải lại trang. Dữ liệu chỉ di chuyển giữa máy này và Cloud khi bạn bấm một trong hai nút bên dưới.</p>
       <div class="flex flex-wrap items-center gap-3">
-        <button id="pushLocalToCloudBtn" class="bg-white border border-teal-700 text-teal-700 hover:bg-teal-50 text-sm font-semibold px-4 py-2 rounded-lg">📤 Chủ động đẩy dữ liệu máy này lên Firebase (ghi đè)</button>
+        <button id="pushLocalToCloudBtn" class="bg-white border border-teal-700 text-teal-700 hover:bg-teal-50 text-sm font-semibold px-4 py-2 rounded-lg">📤 Lưu dữ liệu máy này lên Cloud (ghi đè Cloud)</button>
+        <button id="pullFromCloudBtn" class="bg-white border border-slate-400 text-slate-600 hover:bg-slate-50 text-sm font-semibold px-4 py-2 rounded-lg">📥 Tải dữ liệu từ Cloud (ghi đè máy này)</button>
         <span id="backupSyncStatus" class="text-xs text-slate-400"></span>
       </div>
     </div>
 
     <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6">
       <h2 class="font-bold text-slate-800 mb-2 flex items-center gap-2"><span class="w-1.5 h-5 bg-teal-600 rounded-full"></span>Sao lưu &amp; khôi phục dữ liệu</h2>
-      <p class="text-sm text-slate-500 mb-5">Ngoài Firebase, bạn vẫn có thể xuất file JSON/CSV để dự phòng thủ công, hoặc nhập lại một bản backup cũ (việc nhập sẽ ghi đè dữ liệu hiện tại và cũng đồng bộ lên Firebase).</p>
+      <p class="text-sm text-slate-500 mb-5">Ngoài Firebase, bạn vẫn có thể xuất file JSON/CSV để dự phòng thủ công, hoặc nhập lại một bản backup cũ (việc nhập sẽ ghi đè dữ liệu hiện tại trên máy này; nhớ bấm "Lưu dữ liệu máy này lên Cloud" nếu muốn đồng bộ tiếp).</p>
 
       <div class="grid sm:grid-cols-2 gap-4">
         <div class="border border-slate-200 rounded-xl p-4">
@@ -494,7 +496,7 @@
 
       <div class="mt-5 border-t border-slate-100 pt-4">
         <h3 class="font-semibold text-sm mb-2 text-red-500">⚠️ Vùng nguy hiểm</h3>
-        <button id="clearAllBtn" class="text-sm font-semibold text-red-600 border border-red-200 hover:bg-red-50 px-4 py-2 rounded-lg">Xoá toàn bộ dữ liệu &amp; nạp lại dữ liệu mẫu</button>
+        <button id="clearAllBtn" class="text-sm font-semibold text-red-600 border border-red-200 hover:bg-red-50 px-4 py-2 rounded-lg">Xoá toàn bộ dữ liệu trên máy này (về trạng thái trắng)</button>
       </div>
     </div>
   </section>
@@ -629,37 +631,13 @@
   const stateDocRef = db.collection('dong_ho_nuoc_app').doc('state');
 
   let currentUser = null;
-  let cloudReady = false;       // đã đăng nhập + đã gắn listener xong
-  let cloudDocExists = false;   // Firestore đã có dữ liệu chưa
-  let unsubscribeSnapshot = null;
-  let hasLoadedOnce = false;    // đã nhận dữ liệu lần đầu cho phiên/thiết bị này chưa
-  let autoSyncAttempted = false; // đã thử tự động đẩy dữ liệu cũ (localStorage) lên Cloud trong phiên này chưa
-                                 // (lần đầu = an toàn để nạp toàn bộ vì chưa có gì đang nhập dở;
-                                 //  các lần sau chỉ cập nhật ngầm, không đụng vào form đang nhập)
 
-  // ---------- CHỐNG MẤT DỮ LIỆU KHI RELOAD/RESET ----------
-  // Vấn đề gốc: pushStateToCloud() ghi lên Firestore theo kiểu "bắn rồi quên" (không đợi xong).
-  // Nếu người dùng bấm Lưu rồi F5/tắt máy NGAY khi request chưa kịp lên tới server, lần tải trang
-  // sau đó onSnapshot() sẽ nhận về bản ghi CŨ từ Cloud và (theo logic cũ) sẽ ghi đè lên dữ liệu MỚI
-  // đang có trong localStorage. Để chặn việc này, mỗi lần lưu cục bộ sẽ được gắn 1 mốc thời gian
-  // (clientUpdatedAt) lưu song song trong localStorage; khi nhận snapshot đầu tiên, nếu dữ liệu cục
-  // bộ mới hơn (hoặc lần đẩy lên Cloud gần nhất còn đang dang dở/pending) thì KHÔNG ghi đè local,
-  // mà chủ động đẩy lại dữ liệu local lên Cloud để tự "chữa lành" đồng bộ.
-  const SYNC_META_KEY = STORAGE_KEY + '__syncMeta';
-
-  function getSyncMeta(){
-    try{
-      const raw = localStorage.getItem(SYNC_META_KEY);
-      if(raw){
-        const parsed = JSON.parse(raw);
-        if(parsed && typeof parsed === 'object') return parsed;
-      }
-    }catch(e){ /* ignore, dùng mặc định */ }
-    return {updatedAt: 0, pending: false};
-  }
-  function setSyncMeta(meta){
-    try{ localStorage.setItem(SYNC_META_KEY, JSON.stringify(meta)); }catch(e){ console.warn('Không lưu được syncMeta:', e); }
-  }
+  // ---------- ĐỒNG BỘ THỦ CÔNG (KHÔNG CÒN onSnapshot / TỰ ĐỘNG TẢI-GHI ĐÈ) ----------
+  // Toàn bộ cơ chế lắng nghe ngầm (onSnapshot) đã bị gỡ bỏ để tránh việc mỗi lần mở/tải lại
+  // trang tự động kéo dữ liệu Cloud về và ghi đè lên dữ liệu đang có trên máy. Giờ đây dữ liệu
+  // CHỈ di chuyển giữa máy này và Firebase khi người dùng chủ động bấm nút "Lưu lên Cloud"
+  // (đẩy dữ liệu máy này lên, ghi đè Cloud) hoặc "Tải dữ liệu từ Cloud" (kéo dữ liệu Cloud về,
+  // ghi đè máy này, có xác nhận trước khi thực hiện).
 
   function setSyncBadge(text, colorClass){
     const el = document.getElementById('syncBadge');
@@ -668,98 +646,53 @@
     el.className = 'text-[11px] font-semibold whitespace-nowrap ' + colorClass;
   }
 
+  // Đẩy dữ liệu hiện tại trên máy này lên Firebase — chỉ chạy khi người dùng bấm nút, ghi đè
+  // toàn bộ dữ liệu đang có trên Cloud.
   function pushStateToCloud(){
-    if(!currentUser) return Promise.resolve();
-    // Đánh dấu "đang gửi" NGAY trước khi gọi Firestore. Nếu trang bị tải lại/tắt trước khi Firestore
-    // xác nhận, cờ pending=true này vẫn còn trong localStorage để lần sau tự đẩy lại dữ liệu.
-    const clientUpdatedAt = Date.now();
-    setSyncMeta({updatedAt: clientUpdatedAt, pending: true});
-    setSyncBadge('🔄 Đang đồng bộ…', 'text-amber-200');
+    if(!currentUser){ toast('Bạn cần đăng nhập trước.', 'err'); return Promise.resolve(); }
+    setSyncBadge('🔄 Đang lưu lên Cloud…', 'text-amber-200');
     return stateDocRef.set({
       meters: state.meters,
       readings: state.readings,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-      clientUpdatedAt: clientUpdatedAt,
       updatedBy: currentUser.email
     }).then(()=>{
-      cloudDocExists = true;
-      // Ghi thành công lên Firestore -> tắt cờ pending, xác nhận mốc thời gian đã đồng bộ.
-      setSyncMeta({updatedAt: clientUpdatedAt, pending: false});
-      setSyncBadge('🟢 Đã đồng bộ', 'text-emerald-200');
+      setSyncBadge('🟢 Đã lưu lúc ' + new Date().toLocaleTimeString('vi-VN'), 'text-emerald-200');
     }).catch(err=>{
       console.error('Lỗi đẩy dữ liệu lên Firebase:', err);
-      setSyncBadge('🔴 Lỗi đồng bộ', 'text-red-200');
-      toast('⚠️ Không đồng bộ được lên Firebase: ' + err.message, 'err');
-      // Giữ nguyên pending=true để lần tải trang kế tiếp biết cần đẩy lại dữ liệu này.
+      setSyncBadge('🔴 Lỗi lưu Cloud', 'text-red-200');
+      toast('⚠️ Không lưu được lên Firebase: ' + err.message, 'err');
+      throw err;
     });
   }
 
-  function startCloudSync(){
-    if(unsubscribeSnapshot) unsubscribeSnapshot();
-    unsubscribeSnapshot = stateDocRef.onSnapshot(function(doc){
-      cloudDocExists = doc.exists;
+  // Tải dữ liệu từ Firebase về máy này — chỉ chạy MỘT LẦN khi người dùng bấm nút (không lắng
+  // nghe liên tục), và luôn hỏi xác nhận trước khi ghi đè dữ liệu hiện tại trên máy.
+  function pullStateFromCloud(){
+    if(!currentUser){ toast('Bạn cần đăng nhập trước.', 'err'); return Promise.resolve(); }
+    setSyncBadge('🔄 Đang tải từ Cloud…', 'text-amber-200');
+    return stateDocRef.get().then(function(doc){
       if(!doc.exists){
-        cloudReady = true;
-        hasLoadedOnce = true;
-        const hasLocalData = state && ((state.meters && state.meters.length) || (state.readings && state.readings.length));
-        if(hasLocalData && !autoSyncAttempted){
-          // Chưa có dữ liệu trên Cloud nhưng máy này đang có dữ liệu cũ (LocalStorage) -> tự động
-          // đẩy lên ngầm, không yêu cầu người dùng bấm nút thủ công.
-          autoSyncAttempted = true;
-          setSyncBadge('🔄 Đang tự động đồng bộ dữ liệu cũ…', 'text-amber-200');
-          pushStateToCloud().then(function(){
-            toast('☁️ Đã tự động đồng bộ dữ liệu cũ trên máy này lên Firebase.');
-            const statusEl = document.getElementById('backupSyncStatus');
-            if(statusEl) statusEl.textContent = '✅ Đã tự động đồng bộ lúc ' + new Date().toLocaleTimeString('vi-VN');
-          });
-        }else{
-          setSyncBadge('☁️ Chưa có dữ liệu trên đám mây', 'text-amber-200');
-        }
-        return;
-      }
-      // Bỏ qua "echo" của chính lần ghi cục bộ (đã cập nhật UI rồi)
-      if(doc.metadata.hasPendingWrites){
-        cloudReady = true;
+        setSyncBadge('☁️ Cloud chưa có dữ liệu', 'text-amber-200');
+        toast('☁️ Chưa có dữ liệu nào trên Cloud.', 'warn');
         return;
       }
       const data = doc.data();
       const incomingState = {meters: data.meters||[], readings: data.readings||[]};
-      const incomingJson = JSON.stringify(incomingState);
-      const currentJson = JSON.stringify({meters: state.meters, readings: state.readings});
-      if(incomingJson !== currentJson){
-        const meta = getSyncMeta();
-        const incomingClientUpdatedAt = typeof data.clientUpdatedAt === 'number' ? data.clientUpdatedAt : 0;
-        // Dữ liệu cục bộ được coi là "mới hơn/đáng tin hơn" dữ liệu Cloud vừa nhận về khi:
-        //  - lần lưu gần nhất trên máy này vẫn đang "pending" (chưa chắc đã lên tới server), hoặc
-        //  - mốc thời gian lưu cục bộ >= mốc thời gian của bản ghi Cloud đang nhận.
-        const localIsAuthoritative = meta.pending || (meta.updatedAt && meta.updatedAt >= incomingClientUpdatedAt);
-
-        if(!hasLoadedOnce && localIsAuthoritative){
-          // KHÔNG ghi đè dữ liệu vừa nhập/đang có trong localStorage bằng dữ liệu Cloud cũ hơn.
-          // Chủ động đẩy lại dữ liệu cục bộ lên Cloud để tự sửa lại đồng bộ cho đúng.
-          console.warn('Bỏ qua dữ liệu Cloud (cũ hơn hoặc chưa xác nhận) để tránh mất dữ liệu vừa nhập. Đang đẩy lại dữ liệu cục bộ lên Cloud.');
-          pushStateToCloud();
-        }else{
-          state = incomingState;
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-          setSyncMeta({updatedAt: incomingClientUpdatedAt, pending: false});
-          if(!hasLoadedOnce){
-            // Lần nạp dữ liệu đầu tiên trên thiết bị/phiên này (vd: vừa đăng nhập trên máy chưa từng
-            // đăng nhập) -> form nhập chỉ số đang trống, an toàn để nạp toàn bộ giao diện.
-            renderAll();
-          }else{
-            // Đồng bộ nền trong lúc đang thao tác: KHÔNG hiển thị cảnh báo và KHÔNG làm mới
-            // form nhập chỉ số (tránh mất dữ liệu đang nhập dở). Chỉ âm thầm cập nhật các bảng khác.
-            renderAllQuiet();
-          }
-        }
+      const msg = `Trên Cloud đang có ${incomingState.meters.length} đồng hồ và ${incomingState.readings.length} bản ghi. Tải về sẽ GHI ĐÈ toàn bộ dữ liệu hiện tại trên máy này. Tiếp tục?`;
+      if(!confirm(msg)){
+        setSyncBadge('🖐️ Chế độ thủ công', 'text-teal-100/80');
+        return;
       }
-      setSyncBadge('🟢 Đã đồng bộ', 'text-emerald-200');
-      cloudReady = true;
-      hasLoadedOnce = true;
-    }, function(err){
-      console.error('Lỗi lắng nghe Firestore:', err);
-      setSyncBadge('🔴 Mất kết nối đồng bộ', 'text-red-200');
+      state = incomingState;
+      saveState(state);
+      setSyncBadge('🟢 Đã tải từ Cloud lúc ' + new Date().toLocaleTimeString('vi-VN'), 'text-emerald-200');
+      toast('✅ Đã tải dữ liệu từ Cloud về máy này.');
+      renderAll();
+    }).catch(function(err){
+      console.error('Lỗi tải dữ liệu từ Firebase:', err);
+      setSyncBadge('🔴 Lỗi tải Cloud', 'text-red-200');
+      toast('⚠️ Không tải được dữ liệu từ Firebase: ' + err.message, 'err');
     });
   }
 
@@ -773,12 +706,11 @@
       authOverlay.classList.add('hidden');
       appRoot.classList.remove('hidden');
       document.getElementById('userEmailLabel').textContent = user.email;
-      startCloudSync();
+      // KHÔNG tự động tải hay đồng bộ gì từ Cloud ở đây — chỉ hiển thị dữ liệu đang có sẵn trên
+      // máy này (localStorage). Người dùng tự bấm "Lưu Cloud" / "Tải dữ liệu từ Cloud" khi cần.
+      setSyncBadge('🖐️ Chế độ thủ công', 'text-teal-100/80');
       renderAll();
     }else{
-      cloudReady = false;
-      hasLoadedOnce = false;
-      if(unsubscribeSnapshot){ unsubscribeSnapshot(); unsubscribeSnapshot = null; }
       appRoot.classList.add('hidden');
       authOverlay.classList.remove('hidden');
       document.getElementById('loginPassword').value = '';
@@ -833,41 +765,7 @@
     return '<span class="badge-dot bg-red-500"></span>';
   }
 
-  // ---------- MOCK DATA ----------
-  function buildMockData(){
-    const meters = [
-      {id:uid(), branch:"Hồ Tràm", plant:"NM nước Hồ Tràm 1", plantType:"Nhà máy nước", waterType:"Nước sạch", area:"Khu dân cư Phước Thuận", location:"Ngã 3 Phước Thuận", code:"HT-001", type:"Cơ khí", condition:"Bình thường", diameter:"DN100", status:"Cập nhật hàng ngày", note:""},
-      {id:uid(), branch:"Hồ Tràm", plant:"NM nước Hồ Tràm 1", plantType:"Nhà máy nước", waterType:"Nước sạch", area:"KCN Hồ Tràm", location:"Cổng số 2 KCN", code:"HT-002", type:"Điện từ", condition:"Chống thất thoát", diameter:"DN150", status:"Không cập nhật hàng ngày", note:"Chờ thay dây tín hiệu"},
-      {id:uid(), branch:"Hồ Tràm", plant:"Trạm tăng áp Hồ Tràm 2", plantType:"Trạm tăng áp", waterType:"Nước sạch", area:"Khu resort ven biển", location:"Trạm bơm tăng áp số 3", code:"HT-003", type:"Siêu âm", condition:"Bình thường", diameter:"DN80", status:"Cập nhật hàng ngày", note:""},
-      {id:uid(), branch:"Xuân Sơn", plant:"NM nước Xuân Sơn", plantType:"Nhà máy nước", waterType:"Nước thô", area:"", location:"Đầu tuyến ống chính", code:"XS-001", type:"Cơ khí", condition:"Bình thường", diameter:"DN100", status:"Cập nhật hàng ngày", note:""},
-      {id:uid(), branch:"Xuân Sơn", plant:"NM nước Xuân Sơn", plantType:"Nhà máy nước", waterType:"Nước sạch", area:"Khu tái định cư", location:"Cổng khu TĐC", code:"XS-002", type:"Cơ khí", condition:"Phục Hồi", diameter:"DN50", status:"Không cập nhật hàng ngày", note:""},
-      {id:uid(), branch:"Châu Pha", plant:"NM nước Châu Pha", plantType:"Nhà máy nước", waterType:"Nước sạch", area:"KCN Châu Pha", location:"Trạm van tổng", code:"CP-001", type:"Điện từ", condition:"Bình thường", diameter:"DN200", status:"Cập nhật hàng ngày", note:""},
-      {id:uid(), branch:"Châu Pha", plant:"NM nước Châu Pha", plantType:"Nhà máy nước", waterType:"Nước sạch", area:"Khu dân cư thôn 3", location:"Ngã tư thôn 3", code:"CP-002", type:"Cơ khí", condition:"Hỏng", diameter:"DN65", status:"Không có thông tin", note:"Chưa xác định vị trí chính xác"},
-      {id:uid(), branch:"Đất Đỏ", plant:"NM nước Đất Đỏ", plantType:"Nhà máy nước", waterType:"Nước sạch", area:"Thị trấn Đất Đỏ", location:"Trạm cấp trung tâm", code:"DD-001", type:"Điện từ", condition:"Lắp mới", diameter:"DN150", status:"Cập nhật hàng ngày", note:""},
-      {id:uid(), branch:"Đất Đỏ", plant:"NM nước Đất Đỏ", plantType:"Nhà máy nước", waterType:"Nước sạch", area:"Khu vực cũ (đã ngưng)", location:"Tuyến ống cũ", code:"DD-002", type:"Cơ khí", condition:"Thu lại", diameter:"DN50", status:"Ngưng sử dụng", note:"Ngưng cấp từ 2024"}
-    ];
-
-    const readings = [];
-    const dayOffsets = [4,3,2,1,0]; // 5 ngày gần đây
-    const baseIndex = {"HT-001":15000,"HT-002":22000,"HT-003":8000,"XS-001":12000,"XS-002":5000,"CP-001":30000,"CP-002":4000,"DD-001":18000,"DD-002":9000};
-    const baseVol = {"HT-001":120,"HT-002":210,"HT-003":90,"XS-001":140,"XS-002":60,"CP-001":300,"CP-002":40,"DD-001":170,"DD-002":0};
-
-    meters.forEach(m=>{
-      let idx = baseIndex[m.code] || 1000;
-      dayOffsets.forEach((off,i)=>{
-        const d = new Date(); d.setDate(d.getDate()-off);
-        const dateStr = d.toISOString().slice(0,10);
-        let vol = (baseVol[m.code] || 50) + Math.round((Math.random()*20-8));
-        if(m.code === "HT-002" && i === dayOffsets.length-1) vol = Math.round((baseVol[m.code])*1.6); // demo tăng đột biến
-        if(m.status === "Ngưng sử dụng") vol = 0;
-        idx += vol;
-        readings.push({id:uid(), meterId:m.id, date:dateStr, index:idx, volume:vol, note:""});
-      });
-    });
-
-    return {meters, readings};
-  }
-
+  // ---------- KHỞI TẠO DỮ LIỆU (TRẮNG, KHÔNG CÒN DỮ LIỆU MẪU) ----------
   function loadState(){
     try{
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -876,26 +774,17 @@
         if(parsed && Array.isArray(parsed.meters) && Array.isArray(parsed.readings)) return parsed;
       }
     }catch(e){ console.warn("Không đọc được dữ liệu cũ:", e); }
-    const mock = buildMockData();
-    // QUAN TRỌNG: đây chỉ là dữ liệu MẪU dùng tạm khi máy này chưa có gì trong localStorage
-    // (máy mới / vừa xoá cache) — TUYỆT ĐỐI không được coi là dữ liệu "mới nhập" của người dùng.
-    // Nếu gọi saveState() bình thường ở đây, cờ pending sẽ bật lên và có thể khiến dữ liệu mẫu
-    // này bị coi là "mới hơn" dữ liệu thật trên Cloud, dẫn tới ĐÈ MẤT dữ liệu thật khi đăng nhập.
-    // Vì vậy chỉ ghi tạm vào localStorage, KHÔNG bật cờ pending, KHÔNG giữ ưu tiên nào so với Cloud
-    // (updatedAt: 0) để dữ liệu thật từ Firebase luôn được ưu tiên nạp về ngay khi có.
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(mock));
-    setSyncMeta({updatedAt: 0, pending: false});
-    return mock;
+    // Máy mới / chưa từng lưu gì -> khởi tạo trắng hoàn toàn, KHÔNG còn dữ liệu mẫu demo.
+    return {meters: [], readings: []};
   }
+
+  // Chỉ lưu vào localStorage của trình duyệt. KHÔNG tự động đẩy lên Firebase — việc đồng bộ
+  // Cloud chỉ diễn ra khi người dùng chủ động bấm nút "Lưu Cloud" / "Tải dữ liệu từ Cloud".
   function saveState(s){
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
-    if(cloudReady){
-      pushStateToCloud();
-    }else{
-      // Chưa sẵn sàng đồng bộ lên Cloud (vd: vừa mới đăng nhập, listener chưa gắn xong).
-      // Vẫn đánh dấu là "pending" với mốc thời gian lưu cục bộ mới nhất, để khi listener
-      // gắn xong và nhận snapshot đầu tiên, dữ liệu vừa lưu KHÔNG bị dữ liệu Cloud cũ đè lên.
-      setSyncMeta({updatedAt: Date.now(), pending: true});
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+    }catch(e){
+      console.warn('Không lưu được vào localStorage:', e);
     }
   }
 
@@ -2281,10 +2170,10 @@
   });
 
   document.getElementById('clearAllBtn').addEventListener('click', function(){
-    if(!confirm('Xoá TOÀN BỘ dữ liệu hiện tại và nạp lại dữ liệu mẫu? Hành động không thể hoàn tác.')) return;
-    state = buildMockData();
+    if(!confirm('Xoá TOÀN BỘ dữ liệu (đồng hồ + lịch sử) trên máy này, đưa ứng dụng về trạng thái trắng? Hành động không thể hoàn tác. (Dữ liệu trên Cloud sẽ không đổi trừ khi bạn bấm "Lưu Cloud" sau đó.)')) return;
+    state = {meters: [], readings: []};
     saveState(state);
-    toast('♻️ Đã đặt lại dữ liệu mẫu.');
+    toast('🗑️ Đã xoá toàn bộ dữ liệu trên máy này.');
     renderAll();
   });
 
@@ -2308,34 +2197,37 @@
     setDefaultExportPeriod(document.getElementById('exportPeriodType').value);
   }
 
-  // Cập nhật "ngầm" khi có dữ liệu mới đồng bộ về từ người dùng/thiết bị khác TRONG LÚC đang
-  // thao tác. Cố tình KHÔNG đụng vào form "Nhập chỉ số" (branch/plant/meter/date/index/volume/note)
-  // và KHÔNG hiện toast cảnh báo, để không làm mất nội dung người dùng đang nhập dở.
-  function renderAllQuiet(){
-    autoUpdateDailyStatus();
-    renderMeterFilterSelects();
-    renderHistoryFilters();
-    renderTodayEnteredTable();
-    renderMeterTable();
-    renderHistoryTable();
-    renderStats();
-    renderAnalysisFilters();
-    renderAnalysisTable();
-  }
-
   // Lưu ý: renderAll() được gọi trong auth.onAuthStateChanged() sau khi đăng nhập thành công,
   // không tự chạy ở đây để tránh lộ dữ liệu khi chưa xác thực.
 
-  // ---------- ĐẨY DỮ LIỆU CŨ (LOCALSTORAGE) LÊN FIREBASE ----------
+  // ---------- LƯU THỦ CÔNG: MÁY NÀY -> FIREBASE (GHI ĐÈ CLOUD) ----------
   document.getElementById('pushLocalToCloudBtn').addEventListener('click', function(){
     if(!currentUser){ toast('Bạn cần đăng nhập trước.', 'err'); return; }
     const statusEl = document.getElementById('backupSyncStatus');
-    const msg = `Sẽ đẩy ${state.meters.length} đồng hồ và ${state.readings.length} bản ghi hiện có trên máy này lên Firebase, GHI ĐÈ dữ liệu đang có trên đám mây (nếu có). Tiếp tục?`;
+    const msg = `Sẽ lưu ${state.meters.length} đồng hồ và ${state.readings.length} bản ghi hiện có trên máy này lên Firebase, GHI ĐÈ dữ liệu đang có trên đám mây (nếu có). Tiếp tục?`;
     if(!confirm(msg)) return;
-    statusEl.textContent = 'Đang đẩy dữ liệu lên Firebase...';
+    statusEl.textContent = 'Đang lưu dữ liệu lên Firebase...';
     pushStateToCloud().then(function(){
-      statusEl.textContent = '✅ Đã đẩy dữ liệu lên Firebase lúc ' + new Date().toLocaleTimeString('vi-VN');
-      toast('✅ Đã đẩy dữ liệu cũ lên Firebase thành công.');
+      statusEl.textContent = '✅ Đã lưu lên Firebase lúc ' + new Date().toLocaleTimeString('vi-VN');
+      toast('✅ Đã lưu dữ liệu lên Firebase thành công.');
+    }).catch(function(){
+      statusEl.textContent = '⚠️ Lưu lên Firebase thất bại.';
+    });
+  });
+
+  // ---------- TẢI THỦ CÔNG: FIREBASE -> MÁY NÀY (GHI ĐÈ MÁY NÀY, CÓ XÁC NHẬN) ----------
+  document.getElementById('pullFromCloudBtn').addEventListener('click', function(){
+    const statusEl = document.getElementById('backupSyncStatus');
+    pullStateFromCloud().then(function(){
+      if(statusEl) statusEl.textContent = '';
+    });
+  });
+
+  // Nút "💾 Lưu Cloud" ở header — lối tắt để lưu nhanh lên Firebase từ bất kỳ tab nào.
+  document.getElementById('saveToCloudBtn').addEventListener('click', function(){
+    if(!currentUser){ toast('Bạn cần đăng nhập trước.', 'err'); return; }
+    pushStateToCloud().then(function(){
+      toast('✅ Đã lưu dữ liệu lên Firebase.');
     });
   });
 })();
