@@ -616,13 +616,13 @@
 
   // ---------- FIREBASE ----------
   const firebaseConfig = {
-    apiKey: "AIzaSyBl4QpbO2imYQjvUMBFvSJvlKbIUgjz2qU",
-    authDomain: "so-de-xuat-hang-ngay.firebaseapp.com",
-    projectId: "so-de-xuat-hang-ngay",
-    storageBucket: "so-de-xuat-hang-ngay.firebasestorage.app",
-    messagingSenderId: "808463356073",
-    appId: "1:808463356073:web:bd83802ed2d5ec731c99b8"
-  };
+  	apiKey: "AIzaSyDwWv1EbAMugqCJ6U6FCf4qm1I0uUu2ov4",
+  	authDomain: "so-de-xuat-hang-ngay-4cae1.firebaseapp.com",
+  	projectId: "so-de-xuat-hang-ngay-4cae1",
+  	storageBucket: "so-de-xuat-hang-ngay-4cae1.firebasestorage.app",
+  	messagingSenderId: "548226838314",
+  	appId: "1:548226838314:web:40ca34f16d2bb123e13853"
+};
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
   const db = firebase.firestore();
@@ -877,7 +877,14 @@
       }
     }catch(e){ console.warn("Không đọc được dữ liệu cũ:", e); }
     const mock = buildMockData();
-    saveState(mock);
+    // QUAN TRỌNG: đây chỉ là dữ liệu MẪU dùng tạm khi máy này chưa có gì trong localStorage
+    // (máy mới / vừa xoá cache) — TUYỆT ĐỐI không được coi là dữ liệu "mới nhập" của người dùng.
+    // Nếu gọi saveState() bình thường ở đây, cờ pending sẽ bật lên và có thể khiến dữ liệu mẫu
+    // này bị coi là "mới hơn" dữ liệu thật trên Cloud, dẫn tới ĐÈ MẤT dữ liệu thật khi đăng nhập.
+    // Vì vậy chỉ ghi tạm vào localStorage, KHÔNG bật cờ pending, KHÔNG giữ ưu tiên nào so với Cloud
+    // (updatedAt: 0) để dữ liệu thật từ Firebase luôn được ưu tiên nạp về ngay khi có.
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(mock));
+    setSyncMeta({updatedAt: 0, pending: false});
     return mock;
   }
   function saveState(s){
