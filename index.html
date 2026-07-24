@@ -96,7 +96,7 @@
     </button>
   </nav>
   <div class="px-4 py-4 border-t border-marine-600 text-[11px] text-marine-200 leading-relaxed">
-    Dữ liệu được lưu tạm trên trình duyệt (localStorage). Bấm <b>Lưu lên Cloud</b> để đồng bộ Firestore.
+    Dữ liệu từ Cloud tự động cập nhật xuống đây. Thay đổi bạn nhập chỉ lưu tạm trên trình duyệt — bấm <b>Lưu lên Cloud</b> để đồng bộ lên Firestore.
   </div>
 </aside>
 
@@ -112,7 +112,6 @@
         <span id="sync-dot" class="w-2 h-2 rounded-full bg-aqua-400"></span>
         <span id="sync-text">Đã đồng bộ</span>
       </div>
-      <button id="btn-load-cloud" class="text-xs px-3 py-2 rounded-lg border border-marine-200 text-marine-600 hover:bg-marine-50 transition">↺ Tải từ Cloud</button>
       <button id="btn-save-cloud" class="text-xs font-semibold px-4 py-2 rounded-lg bg-marine-600 text-white hover:bg-marine-700 transition shadow-sm">💾 Lưu lên Cloud</button>
       <button id="btn-logout" class="text-xs px-3 py-2 rounded-lg border border-marine-200 text-marine-400 hover:bg-marine-50 transition">Đăng xuất</button>
     </div>
@@ -561,9 +560,14 @@ onAuthStateChanged(auth, (user) => {
     appShell.classList.remove("hidden");
     document.getElementById("current-user-email").textContent = user.email || "";
     if (!window.__appInitialized) { window.__appInitialized = true; init(); }
+    else { loadLocal(); startRealtimeSync(); refreshEverything(); } // đăng nhập lại sau khi đăng xuất
   } else {
     appShell.classList.add("hidden");
     loginScreen.classList.remove("hidden");
+    // Dừng lắng nghe realtime khi đăng xuất (nếu không sẽ bị lỗi permission-denied
+    // vì rules yêu cầu đăng nhập)
+    if (typeof unsubscribeMeters === "function") unsubscribeMeters();
+    if (typeof unsubscribeReadings === "function") unsubscribeReadings();
   }
 });
 
@@ -583,7 +587,7 @@ onAuthStateChanged(auth, (user) => {
 // ============================================================================
 
 import {
-  collection, doc, getDocs, writeBatch, deleteDoc
+  collection, doc, onSnapshot, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ============================================================
@@ -664,10 +668,12 @@ function uid() {
 
 /* ============================================================
    3. ĐỒNG BỘ FIREBASE
-   - saveToCloud(): đẩy các bản ghi "dirty" lên Firestore bằng writeBatch,
-     và xoá các bản ghi nằm trong danh sách "deleted".
-   - loadFromCloud(): đọc TOÀN BỘ collection 1 lần (getDocs, không dùng
-     onSnapshot) để tránh ghi đè ngầm dữ liệu người dùng đang nhập dở.
+   - saveToCloud(): đẩy các bản ghi "dirty" lên Firestore bằng writeBatch —
+     VẪN LÀ THỦ CÔNG, chỉ chạy khi bấm nút [💾 Lưu lên Cloud].
+   - startRealtimeSync(): dùng onSnapshot để TỰ ĐỘNG nhận thay đổi mới nhất
+     từ Cloud (do người khác lưu lên, hoặc do chính bạn lưu từ máy khác) và
+     merge vào dữ liệu cục bộ — nhưng bản ghi nào đang "dirty" (đang sửa dở,
+     chưa bấm Lưu lên Cloud) thì GIỮ NGUYÊN bản local, không bị ghi đè.
    ============================================================ */
 async function saveToCloud() {
   const total = dirtyMeters.size + dirtyReadings.size + deletedMeters.size + deletedReadings.size;
@@ -709,34 +715,50 @@ async function saveToCloud() {
   }
 }
 
-async function loadFromCloud() {
-  const total = dirtyMeters.size + dirtyReadings.size + deletedMeters.size + deletedReadings.size;
-  if (total > 0) {
-    const ok = confirm("Bạn đang có thay đổi chưa lưu lên Cloud. Tải dữ liệu mới sẽ GHI ĐÈ các thay đổi này trên trình duyệt. Tiếp tục?");
-    if (!ok) return;
-  }
-  const btn = document.getElementById("btn-load-cloud");
-  btn.disabled = true; btn.textContent = "Đang tải...";
-  try {
-    if (!currentUser) throw new Error("Phiên đăng nhập đã hết hạn — vui lòng đăng nhập lại.");
+// Merge một collection từ Cloud vào mảng local tương ứng, bỏ qua các bản ghi
+// đang "dirty" (sửa dở chưa lưu) hoặc đang chờ xoá cục bộ để không ghi đè
+// công việc đang làm dở của người dùng.
+function mergeCloudIntoLocal(cloudDocs, localArray, dirtySet, deletedSet) {
+  const cloudIds = new Set(cloudDocs.map(d => d.id));
+  // Bỏ các bản ghi không-dirty đã biến mất trên Cloud (bị người khác xoá)
+  let result = localArray.filter(item => dirtySet.has(item.id) || cloudIds.has(item.id));
+  const indexById = new Map(result.map((item, i) => [item.id, i]));
+  cloudDocs.forEach(cloudDoc => {
+    if (dirtySet.has(cloudDoc.id)) return;   // đang sửa dở cục bộ -> giữ bản local
+    if (deletedSet.has(cloudDoc.id)) return; // đang chờ xoá cục bộ -> không hồi sinh
+    if (indexById.has(cloudDoc.id)) result[indexById.get(cloudDoc.id)] = cloudDoc;
+    else result.push(cloudDoc);
+  });
+  return result;
+}
 
-    const [metersSnap, readingsSnap] = await Promise.all([
-      getDocs(collection(db, "meters")),
-      getDocs(collection(db, "readings"))
-    ]);
-    meters = metersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    readings = readingsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    dirtyMeters.clear(); dirtyReadings.clear();
-    deletedMeters.clear(); deletedReadings.clear();
+let unsubscribeMeters = null, unsubscribeReadings = null;
+
+function startRealtimeSync() {
+  if (unsubscribeMeters) unsubscribeMeters();
+  if (unsubscribeReadings) unsubscribeReadings();
+
+  unsubscribeMeters = onSnapshot(collection(db, "meters"), (snap) => {
+    const cloudDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    meters = mergeCloudIntoLocal(cloudDocs, meters, dirtyMeters, deletedMeters);
     saveLocal();
-    refreshEverything();
-    toast(`Đã tải ${meters.length} đồng hồ và ${readings.length} bản ghi từ Cloud.`);
-  } catch (err) {
-    console.error(err);
-    toast("Lỗi khi tải từ Cloud: " + err.message + " (kiểm tra firebase-config.js)");
-  } finally {
-    btn.disabled = false; btn.textContent = "↺ Tải từ Cloud";
-  }
+    renderMeterTable();
+    refreshModule1Dropdowns();
+  }, (err) => {
+    console.error("Lỗi đồng bộ realtime (meters):", err);
+    toast("Mất kết nối đồng bộ tự động (đồng hồ): " + err.message);
+  });
+
+  unsubscribeReadings = onSnapshot(collection(db, "readings"), (snap) => {
+    const cloudDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    readings = mergeCloudIntoLocal(cloudDocs, readings, dirtyReadings, deletedReadings);
+    saveLocal();
+    renderHistoryTable();
+    refreshNcsAutoFields();
+  }, (err) => {
+    console.error("Lỗi đồng bộ realtime (readings):", err);
+    toast("Mất kết nối đồng bộ tự động (lịch sử): " + err.message);
+  });
 }
 
 /* ============================================================
@@ -1385,7 +1407,10 @@ function init() {
   document.getElementById("bc-ky").value = toISO(new Date());
 
   document.getElementById("btn-save-cloud").addEventListener("click", saveToCloud);
-  document.getElementById("btn-load-cloud").addEventListener("click", loadFromCloud);
+
+  // Bắt đầu lắng nghe realtime: mọi thay đổi trên Cloud sẽ tự động cập nhật
+  // xuống đây, trừ các bản ghi đang sửa dở (dirty) chưa được lưu.
+  startRealtimeSync();
 
   refreshEverything();
   buildReport();
