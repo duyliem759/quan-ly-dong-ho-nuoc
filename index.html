@@ -147,6 +147,7 @@
           <select id="ncs-donghos" required class="w-full border border-marine-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-aqua-400">
             <option value="">-- Chọn đồng hồ --</option>
           </select>
+          <span id="ncs-trangthai-badge" class="hidden mt-1 inline-block px-2 py-0.5 rounded-full text-[11px] font-medium"></span>
         </div>
 
         <div>
@@ -818,9 +819,27 @@ function computeKhoiLuong() {
   if (!isNaN(cu) && !isNaN(moi)) ncsKhoiLuong.value = (moi - cu).toString();
 }
 
+const NCS_TRANGTHAI_STYLE = {
+  "Cập nhật hàng ngày": "bg-aqua-400/15 text-aqua-600",
+  "Không cập nhật hàng ngày": "bg-amber-100 text-amber-600",
+  "Ngưng sử dụng": "bg-red-100 text-red-600",
+  "Không có thông tin": "bg-marine-100 text-marine-500"
+};
+
+function updateNcsTrangThaiBadge() {
+  const badge = document.getElementById("ncs-trangthai-badge");
+  const meter = meters.find(m => m.id === ncsDongHo.value);
+  if (!meter) { badge.className = "hidden mt-1 inline-block px-2 py-0.5 rounded-full text-[11px] font-medium"; badge.textContent = ""; return; }
+  const trangThai = meter.trangThai || "Không có thông tin";
+  const style = NCS_TRANGTHAI_STYLE[trangThai] || NCS_TRANGTHAI_STYLE["Không có thông tin"];
+  badge.textContent = trangThai;
+  badge.className = `mt-1 inline-block px-2 py-0.5 rounded-full text-[11px] font-medium ${style}`;
+}
+
 function refreshNcsAutoFields() {
   const meterId = ncsDongHo.value;
   const dateStr = ncsNgay.value;
+  updateNcsTrangThaiBadge();
   if (!meterId || !dateStr) { ncsChiSoCu.value = ""; renderRecentReadings(null); return; }
   const prev = findLastReadingBefore(meterId, dateStr);
   ncsChiSoCu.value = prev ? prev.chiSoMoi : 0;
@@ -876,7 +895,10 @@ document.getElementById("form-nhapchiso").addEventListener("submit", (e) => {
 
   editingReadingId = null;
   toast("Đã lưu chỉ số (tạm trên trình duyệt). Nhớ bấm 'Lưu lên Cloud' để đồng bộ.");
-  e.target.reset();
+  // Chỉ làm mới các ô nhập số liệu, giữ nguyên Cơ sở/Chi nhánh/Nhà máy/Đồng hồ/Ngày
+  ncsChiSoMoi.value = "";
+  ncsKhoiLuong.value = "";
+  ncsGhiChu.value = "";
   refreshNcsAutoFields();
   renderMeterTable(); renderHistoryTable();
 });
